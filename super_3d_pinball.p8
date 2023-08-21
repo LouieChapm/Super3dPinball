@@ -22,19 +22,19 @@ function _init()
 	palt(0,false)
 	palt(15,true)
 
-	LINES={}
 
 	BALLS={}
 	new_ball(30,50)
 	
-	new_line(10,70,40,80)
-	new_line(90,80,118,70)
+	WALLS={}
+	new_wall(10,70,40,80)
+	new_wall(90,80,118,70)
 
-	new_line(0,0,10,70)
-	new_line(118,70,128,0)
+	new_wall(0,0,10,70)
+	new_wall(118,70,128,0)
 
-	new_line(64,-20,0,0)
-	new_line(128,0,64,-20)
+	new_wall(64,-20,0,0)
+	new_wall(128,0,64,-20)
 
 	FLIPPERS = {}
 
@@ -85,16 +85,16 @@ function new_ball(_tx, _ty)
 	return add(BALLS, pinball)
 end
 
-function new_line(x1,y1,x2,y2)
-	local line = {
+function new_wall(x1,y1,x2,y2)
+	local wall = {
 		a = new_point(x1,y1), 
 		b = new_point(x2,y2),
 	}
 
-	local dirX,dirY,length = get_direction_of_vector(convert_points_to_vector(line.a,line.b))
-	line.dirX,line.dirY,line.length= dirY , -dirX,length
+	local dirX,dirY,length = get_direction_of_vector(convert_points_to_vector(wall.a,wall.b))
+	wall.dirX,wall.dirY,wall.length= dirY , -dirX,length
 
-	return add(LINES,line)
+	return add(WALLS,wall)
 end
 
 function new_point(_x, _y)
@@ -144,7 +144,7 @@ function _draw()
 		end
 	end
 
-	draw_lines()
+	draw_walls()
 	
 	foreach(FLIPPERS, draw_flipper)
 	foreach(BALLS, draw_ball)
@@ -182,15 +182,14 @@ function draw_flipper(_flipper)
 	-- print(_flipper.active_perc, ox, oy, 1)
 end
 
-function draw_lines()
-	for i=1,#LINES do 
-		local _line=LINES[i]
+function draw_walls()
+	for i=1,#WALLS do 
+		local _wall=WALLS[i]
 		
-		local a,b = LINES[i].a, LINES[i].b
+		local a,b = _wall.a, _wall.b
 		local cx,cy = lerp(a.x,b.x,.5),lerp(a.y,b.y,.5)	-- get centre of line
 		
-		line(cx,cy,cx+_line.dirX*5,cy+_line.dirY*5,13)
-		--print(_line.length, cx,cy +2, 1)
+		line(cx,cy,cx+_wall.dirX*5,cy+_wall.dirY*5,13)
 
 		line(a.x,a.y,b.x,b.y, 5) -- the actual line segment
 	end
@@ -254,8 +253,8 @@ function update_ball(_ball)
 
 	-- check collision with each line of edge
 	-- foreach(LINES, line_col)
-	for line in all(LINES) do 
-		line_col(line, _ball)
+	for wall in all(WALLS) do 
+		wall_col(wall, _ball)
 	end
 
 	for flipper in all(FLIPPERS) do 
@@ -305,9 +304,8 @@ function update_ball(_ball)
 end
 
 -- ran for each edge and applies physics stuff to it
-function line_col(_line, _ball)
-
-	local col,point = edge_collision(_line.a, _line.b, _ball)
+function wall_col(_wall, _ball)
+	local col,point = edge_collision(_wall.a, _wall.b, _ball)
 	if col then
 			-- old performant version , still might use  
 			-- makes use of pre-calculated normals
@@ -325,7 +323,7 @@ function line_col(_line, _ball)
 		local dx = -wall_direction.x * 2 * dot
 		local dy = -wall_direction.y * 2 * dot
 
-		local friction = .1
+		local friction = .8
 
 		add_force(_ball, dx * friction, dy * friction, false)
 	end
@@ -350,7 +348,6 @@ function edge_collision(a, b, ball)
 	local closeX, closeY = a.x + projX , a.y + projY			-- x/y position of point closest to ball along AB
 
 	local col_dist = calc_dist2(closeX, closeY, ball.x, ball.y)
-	DEBUG = col_dist
 
 	--[[
 	local pointX, pointY = ball.x - closeX , ball.y - closeY
