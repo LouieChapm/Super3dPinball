@@ -24,10 +24,12 @@ function _init()
 	menuitem(1, "export data", function() export_data() end)
 
 	poke(0x5F2D, 1)
-	MOUSE_X,MOUSE_Y,MOUSE_CLICK,MOUSE_HOLD=64,64,false,false
+	MOUSE_X,MOUSE_Y,MOUSE_CLICK,MOUSE_HOLD,cursor_mode=64,64,false,false,1
 	mouseX_raw, mouseY_raw = 0,0
 
-	init_polygon(poly_library)
+	POLYGONS = {}
+	foreach(split(poly_library,"\n"),init_polygon)
+	ACTIVE_POLY_INDEX, ACTIVE_POLY_OBJECT = 2, POLYGONS[2]
 
 	CAMERA_X,CAMERA_Y=dget(0) or 0,dget(1) or 0
 	CURSOR_IN_UI = false
@@ -36,22 +38,21 @@ function _init()
 end
 
 function init_polygon(poly_data)
-	POLYGONS ={{}}
-
-	POINTS={}
+	local points={}
 
 	local data = split(poly_data)
 	for i=1,#data-1,2 do 
-
-		local point = add(POINTS,new_point(data[i],data[i+1]))
+		local point = add(points,new_point(data[i],data[i+1], points))
 
 		-- create a weird linked list
-		point.prev = POINTS[i\2] or nil
+		point.prev = points[i\2] or nil
 		if(point.prev)point.prev.next = point
 	end
 
-	POINTS[#POINTS].next = POINTS[1]
-	POINTS[1].prev = POINTS[#POINTS]
+	points[#points].next = points[1]
+	points[1].prev = points[#points]
+
+	return add(POLYGONS, points)
 end
 
 function lerp(a,b,t) 
@@ -67,7 +68,7 @@ function get_direction_of_vector(_x, _y)
 	return _x/length, _y/length, length
 end
 
-function new_point(_x, _y)
+function new_point(_x, _y, _parent)
 	local point = {x=_x, y=_y}
 	point.hover = false
 	point.is_dragging = false
@@ -76,6 +77,8 @@ function new_point(_x, _y)
 	-- create a weird linked list
 	point.prev = nil
 	point.next = nil
+
+	point.parent = _parent or nil
 
 	return point 
 end
@@ -88,7 +91,8 @@ end
 function _update60()
 	mouseX_raw,mouseY_raw=stat(32),stat(33)
 
-	CURSOR_IN_UI = mouseY_raw < 8 or mouseY_raw > 120
+	update_cursor()
+	update_cursor_ui()
 
 	t+=1
 	if(DEBUGTIME>0)DEBUGTIME-=1
@@ -99,19 +103,22 @@ function _update60()
 	CURSORXYSTRING = "x:" .. (MOUSE_X - MOUSE_X%SNAP) .. " y:" .. (MOUSE_Y - MOUSE_Y%SNAP)
 
 	update_keyboard()
-	if(keyboard_tab)show_points = not show_points
+	-- if(keyboard_tab)show_points = not show_points
+	if keyboard_tab then 
+		ACTIVE_POLY_INDEX = (ACTIVE_POLY_INDEX%#POLYGONS)+1
+		ACTIVE_POLY_OBJECT = POLYGONS[ACTIVE_POLY_INDEX]
+	end
 	update_camera()
-	update_cursor()
 
-	foreach(POINTS, update_point)
+	foreach(ACTIVE_POLY_OBJECT, update_point)
 	
 	-- check to see if the cursor is hovering over an edge
 	NEW_POINT_PREVIEW = nil
 	if not cursor_selection then
 		local curs = new_point(MOUSE_X, MOUSE_Y)
 		local closest_collision,collided_obj,collision_info = 999,nil,{}
-		for i=1,#POINTS do 
-			local p1,p2 = POINTS[i],POINTS[i].next
+		for i=1,#ACTIVE_POLY_OBJECT do 
+			local p1,p2 = ACTIVE_POLY_OBJECT[i],ACTIVE_POLY_OBJECT[i].next
 			local col,info=edge_collision(p1,p2,curs)
 			if col and info[4]<closest_collision then 
 				closest_collision = info[4]
@@ -137,16 +144,16 @@ function _update60()
 	end
 
 	-- delete selection on right click
-	if cursor_selection and MOUSE_RIGHT_RELEASE and drag_update_x==0 and drag_update_y==0 then 
+	if cursor_selection and MOUSE_RIGHT_RELEASE and abs(drag_update_x)<=2 and abs(drag_update_y)<=2 then 
 		cursor_selection.prev.next = cursor_selection.next 
 		cursor_selection.next.prev = cursor_selection.prev
 		
-		del(POINTS,cursor_selection)
+		del(ACTIVE_POLY_OBJECT,cursor_selection)
 	end
 
 	-- add new point on left click
 	if NEW_POINT_PREVIEW and MOUSE_CLICK then 
-		local new_point = add(POINTS,new_point(NEW_POINT_PREVIEW.x, NEW_POINT_PREVIEW.y))
+		local new_point = add(ACTIVE_POLY_OBJECT,new_point(NEW_POINT_PREVIEW.x, NEW_POINT_PREVIEW.y, ACTIVE_POLY_OBJECT))
 
 		NEW_POINT_PREVIEW.prev.next = new_point
 		NEW_POINT_PREVIEW.next.prev = new_point
@@ -159,13 +166,9 @@ function _update60()
 end
 
 function update_keyboard()
-	debug(stat(31))
-
 	local p = stat(30) and stat(31)
 
 	keyboard_tab = false
-
-
 	if(p=="\t")keyboard_tab=true
 end
 
@@ -215,6 +218,25 @@ function update_cursor()
 	end
 end
 
+function update_cursor_ui()
+	CURSOR_IN_UI = mouseY_raw < 8 or mouseY_raw > 120
+	cursor_mode = 1
+
+	if mouseY_raw < 8 then
+		for i=1,#POLYGONS do
+			local _x = (i*9)-8
+			if mouseX_raw > _x and mouseX_raw < _x+9 then 
+				cursor_mode = 2
+
+				if MOUSE_CLICK then 
+					ACTIVE_POLY_INDEX = i 
+					ACTIVE_POLY_OBJECT = POLYGONS[i]
+				end
+			end
+		end
+	end
+end
+
 SNAP = 8
 function update_point(_point)
 	_point.hover = false
@@ -253,8 +275,10 @@ function _draw()
 	cls(0)
 	draw_checkerboard(1)
 
-	foreach(POINTS,draw_iPointLine)
-	if(show_points)foreach(POINTS,draw_iPoint)
+	for _poly in all(POLYGONS) do
+		if(_poly!=ACTIVE_POLY_OBJECT)draw_poly(_poly)
+	end
+	draw_poly(ACTIVE_POLY_OBJECT)
 
 	if NEW_POINT_PREVIEW!=nil then 
 		circ(NEW_POINT_PREVIEW.x, NEW_POINT_PREVIEW.y, 2, 7)
@@ -263,13 +287,12 @@ function _draw()
 
 	-- top ui
 	rectfill(CAMERA_X, CAMERA_Y, CAMERA_X+128, CAMERA_Y+7, 8)
-	local selected = 1
 	for i=1, #POLYGONS do
 		local _x,_y=CAMERA_X+3 + (i-1)*9, CAMERA_Y
-		if(selected == i)pal(14,7)
+		if(ACTIVE_POLY_INDEX == i)pal(14,7)
 		spr(2, _x, _y)
-		if(selected == i)pal(14,14)
-		print(i, _x+3, _y+2, 8)
+		if(ACTIVE_POLY_INDEX == i)pal(14,14)
+		print(i-1, _x+3, _y+2, 8)
 	end
 	spr(3,CAMERA_X+3 + (#POLYGONS)*9, CAMERA_Y)
 
@@ -278,8 +301,15 @@ function _draw()
 	print(DEBUGTIME>0 and DEBUG or SELECTION_INFO, CAMERA_X+1, CAMERA_Y+122, 2)
 	print(CURSORXYSTRING, CAMERA_X+128 - #CURSORXYSTRING*4, CAMERA_Y+122, 2)
 
-
-	spr(1,MOUSE_X,MOUSE_Y)
+	if cursor_mode==1 then
+		spr(1,MOUSE_X,MOUSE_Y)
+	elseif cursor_mode==2 then 
+		if MOUSE_HOLD then 
+			sspr(10,8,10,10,MOUSE_X-2, MOUSE_Y)
+		else
+			sspr(0,8,10,10,MOUSE_X-2, MOUSE_Y)
+		end
+	end
 end
 
 function draw_checkerboard(_col)
@@ -309,10 +339,15 @@ function draw_checkerboard(_col)
 	circ(0,0,2,_col)
 end
 
-function draw_iPoint(_point)
-	local col=_point.hover and 7 or 5
+function draw_poly(_poly)
+	foreach(_poly,draw_iPointLine)
+	if(_poly==ACTIVE_POLY_OBJECT and show_points)foreach(_poly,draw_iPoint)
+end
 
-	if(_point.line_hover or _point.prev.line_hover)col = 13
+function draw_iPoint(_point)
+	local col=_point.hover and 7 or 13
+
+	if(_point.line_hover or _point.prev.line_hover)col = 6
 
 	circfill(_point.x,_point.y, 3,0)
 	circ(_point.x, _point.y, 3, col)
@@ -320,10 +355,14 @@ function draw_iPoint(_point)
 end
 
 function draw_iPointLine(_point)
-	local line_col = _point.line_hover and 13 or 5
+	local line_col = _point.line_hover and 13 or 13
 
 	if _point.hover or _point.next.hover then 
-		line_col = 13
+		line_col = 6
+	end
+
+	if _point.parent!=ACTIVE_POLY_OBJECT then 
+		line_col = 5
 	end
 
 	if _point.next then 
@@ -387,18 +426,28 @@ function export_data()
 	
 	local out = "poly_library=[["
 
+	for _poly in all(POLYGONS) do
+		out..=poly_to_string(_poly) .. "\n"
+	end
+
+	out = sub(out,1,-2).."]]"
+
+	printh(out, "inf_polygons.txt", true)
+end
+
+function poly_to_string(_polygon)
+	local out = ""
+
 	local steps = 0
-	local point = POINTS[1]
-	while steps < #POINTS do 
+	local point = _polygon[1]
+	while steps < #_polygon do 
 		out..= point.x .. "," .. point.y ..","
 		
 		steps += 1
 		point = point.next
 	end
 
-	out = sub(out,1,-2) .. "]]"
-
-	printh(out, "inf_polygons.txt", true)
+	return sub(out,1,-2)
 end
 
 
@@ -412,3 +461,13 @@ __gfx__
 0070070017711000eeeeeeee0000e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000001101000eeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000eeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00171000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00171101000001010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00171717100017171710000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+01177777100117777710000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+17177777101717777710000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+01777777100177777710000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00117771000011777100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00017771000001777100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00001110000000111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
