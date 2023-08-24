@@ -5,18 +5,25 @@ __lua__
 
 GRAVITY =  .1
 DEBUG = ""
+DEBUGTIME = 90
+
 deltaTime = 1
 
 LEFT_FLIPPER,RIGHT_FLIPPER = false, false
 FLIPPER_SPEED = .2
 
 PHYSICS_SPEED = .75
-PHYSICS_STEPS = 16
+PHYSICS_STEPS = 8
 
 STOP_SIM = false
 BALL_RADIUS = 4.5
 
 #include inf_polygons.txt
+
+function debug(_text, _time)
+	DEBUG = tostring(_text)
+	DEBUGTIME = _time or 90
+end
 
 function _init()
 	t=0
@@ -26,15 +33,15 @@ function _init()
 
 
 	BALLS={}
-	new_ball(5,50)
+	new_ball(40,50)
 	
 	WALLS={}
 	foreach(split(poly_library,"\n"),init_walls)
 
 	FLIPPERS = {}
 
-	new_flipper(44, 117, 20, .82, -.12, false)
-	new_flipper(94, 117, 20, .18, .12, true)
+	new_flipper(44, 116, 20, .82, -.12, false)
+	new_flipper(94, 116, 20, .18, .12, true)
 
 	new_flipper(137, 10, 20, .05, .1, true)
 
@@ -84,7 +91,7 @@ function new_ball(_tx, _ty)
 		y = _ty,
 
 		dirX = 0,
-		dirY = -7,
+		dirY = 0,
 	}
 
 	return add(BALLS, pinball)
@@ -110,6 +117,9 @@ end
 -- update
 function _update60()
 	t+=1
+
+	if(DEBUGTIME>=0)DEBUGTIME-=1
+	if(DEBUGTIME==0)DEBUG = ""
 
 	LEFT_FLIPPER = btn"4"
 	RIGHT_FLIPPER = btn"5"
@@ -163,7 +173,7 @@ function _draw()
 	foreach(POINTS, draw_point)
 	if (#POINTS>30) deli(POINTS,1)
 
-	print(DEBUG, CAMERA_X + 1 , CAMERA_Y + 1,0)
+	print(DEBUG, CAMERA_X + cam_ox + 1, CAMERA_Y + cam_oy + 1,0)
 
 	local debug2 = tostring(LEFT_FLIPPER) .. " " .. tonum(LEFT_FLIPPER) .. "\n" .. tostring(RIGHT_FLIPPER)
 	print(debug2, 1, 100)
@@ -186,7 +196,7 @@ end
 function draw_flipper(_flipper)
 	local ox, oy = _flipper.x, _flipper.y
 
-	circfill(ox, oy, 3, 3)
+	-- circfill(ox, oy, 3, 3)
 
 	line(ox, oy, _flipper.tip.x, _flipper.tip.y, 3)
 
