@@ -43,7 +43,7 @@ function _init()
 	new_flipper(44, 116, 20, .82, -.12, false)
 	new_flipper(94, 116, 20, .18, .12, true)
 
-	new_flipper(137, 10, 20, .05, .1, true)
+	new_flipper(137, 10, 20, .08, .1, true)
 
 	POINTS = {}
 

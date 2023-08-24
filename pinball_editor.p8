@@ -14,7 +14,7 @@ drag_update_x, drag_update_y=0,0
 
 show_points = true
 
-current_ui_mode = 1
+current_mode_index = 1
 modes_names=split"polygon edit,place parts"
 num_ui_modes = #modes_names
 modes_ui_x = 126 - num_ui_modes*9 		-- horizontal place to start drawing modes ui buttons
@@ -99,6 +99,7 @@ end
 function _update60()
 	mouseX_raw,mouseY_raw=stat(32),stat(33)
 
+	current_mode = modes_names[current_mode_index]
 
 	t+=1
 	if(DEBUGTIME>0)DEBUGTIME-=1
@@ -267,6 +268,12 @@ function update_cursor_ui()
 				if mouseX_raw>_x and mouseX_raw<_x+8 then
 					cursor_mode = 2
 					SELECTION_INFO = modes_names[i+1]
+
+					-- change mode
+					if MOUSE_CLICK then 
+						current_mode_index = i+1
+						current_mode = modes_names[current_mode_index]
+					end
 				end
 			end
 		end
@@ -294,7 +301,7 @@ function create_polygon(_x, _y, _shape)
 	init_polygon(_shape)
 end
 
-SNAP = 2
+SNAP = 4
 function update_point(_point)
 	_point.hover = false
 	_point.line_hover = false
@@ -332,34 +339,22 @@ function _draw()
 	cls(0)
 	draw_checkerboard(1)
 
-	for _poly in all(POLYGONS) do
-		if(_poly!=ACTIVE_POLY_OBJECT)draw_poly(_poly)
-	end
-	draw_poly(ACTIVE_POLY_OBJECT)
+	if(current_mode=="polygon edit")draw_mode_polygon()
+	if(current_mode=="place parts")draw_mode_parts()
 
-	if NEW_POINT_PREVIEW!=nil then 
-		circ(NEW_POINT_PREVIEW.x, NEW_POINT_PREVIEW.y, 2, 7)
-	end
-
-
-	
 	do	-- top ui
 		rectfill(CAMERA_X, CAMERA_Y, CAMERA_X+128, CAMERA_Y+7, 8)
-		for i=1, #POLYGONS do
-			local _x,_y=CAMERA_X+3 + (i-1)*9, CAMERA_Y
-			if(ACTIVE_POLY_INDEX == i)pal(14,7)
-			spr(2, _x, _y)
-			if(ACTIVE_POLY_INDEX == i)pal(14,14)
-			print(i-1, _x+3, _y+2, 8)
-		end
-		spr(3,CAMERA_X+3 + (#POLYGONS)*9, CAMERA_Y)
+		
 
 		for i=0,num_ui_modes-1 do
-			if(i+1==current_ui_mode)pal(2,15)
+			if(i+1==current_mode_index)pal(2,15)
 			spr(9+i, CAMERA_X + modes_ui_x + i*9, CAMERA_Y)
-			if(i+1==current_ui_mode)pal(2,2)
+			if(i+1==current_mode_index)pal(2,2)
 		end
 	end
+
+	if(current_mode=="polygon edit")draw_ui_polygon()
+	if(current_mode=="place parts")draw_ui_parts()
 
 	do -- bottom ui
 		rectfill(CAMERA_X, CAMERA_Y+121, CAMERA_X+128, CAMERA_Y+128, 8)
@@ -380,6 +375,45 @@ function _draw()
 		end
 	end
 end
+
+
+---------------------------------------------------- POLYGON EDIT
+function draw_mode_polygon()
+	for _poly in all(POLYGONS) do
+		if(_poly!=ACTIVE_POLY_OBJECT)draw_poly(_poly)
+	end
+	draw_poly(ACTIVE_POLY_OBJECT)
+
+	if NEW_POINT_PREVIEW!=nil then 
+		circ(NEW_POINT_PREVIEW.x, NEW_POINT_PREVIEW.y, 2, 7)
+	end
+end
+
+function draw_ui_polygon()
+	for i=1, #POLYGONS do
+		local _x,_y=CAMERA_X+3 + (i-1)*9, CAMERA_Y
+		if(ACTIVE_POLY_INDEX == i)pal(14,7)
+		spr(2, _x, _y)
+		if(ACTIVE_POLY_INDEX == i)pal(14,14)
+		print(i-1, _x+3, _y+2, 8)
+	end
+	spr(3,CAMERA_X+3 + (#POLYGONS)*9, CAMERA_Y)
+end
+
+
+---------------------------------------------------- PLACE POLYGONS
+function draw_mode_parts()
+	for _poly in all(POLYGONS) do
+		foreach(_poly,draw_iPointLine)
+	end
+end
+
+function draw_ui_parts()
+
+end
+
+
+
 
 function draw_checkerboard(_col)
 	--[[
@@ -424,14 +458,11 @@ function draw_iPoint(_point)
 end
 
 function draw_iPointLine(_point)
-	local line_col = _point.line_hover and 13 or 13
+	local line_col = 5
 
-	if _point.hover or _point.next.hover then 
-		line_col = 6
-	end
-
-	if _point.parent!=ACTIVE_POLY_OBJECT then 
-		line_col = 5
+	if current_mode == "polygon edit" then
+		if(_point.parent==ACTIVE_POLY_OBJECT)line_col=13
+		if(_point.hover or _point.next.hover) line_col = 6
 	end
 
 	if _point.next then 
