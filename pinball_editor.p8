@@ -3,7 +3,7 @@ version 41
 __lua__
 
 DEBUG = ""
-DEBUGTIME = 90
+DEBUGTIME = 0
 
 SELECTION_INFO = "none"
 CURSORXYSTRING = ""
@@ -13,6 +13,13 @@ cursor_selection = nil
 drag_update_x, drag_update_y=0,0
 
 show_points = true
+
+current_ui_mode = 1
+modes_names=split"polygon edit,place parts"
+num_ui_modes = #modes_names
+modes_ui_x = 126 - num_ui_modes*9 		-- horizontal place to start drawing modes ui buttons
+
+
 
 #include inf_polygons.txt
 
@@ -29,7 +36,7 @@ function _init()
 
 	POLYGONS = {}
 	foreach(split(poly_library,"\n"),init_polygon)
-	ACTIVE_POLY_INDEX, ACTIVE_POLY_OBJECT = 2, POLYGONS[2]
+	ACTIVE_POLY_INDEX, ACTIVE_POLY_OBJECT = 1, POLYGONS[1]
 
 	CAMERA_X,CAMERA_Y=dget(0) or 0,dget(1) or 0
 	CURSOR_IN_UI = false
@@ -40,7 +47,8 @@ end
 function init_polygon(poly_data)
 	local points={}
 
-	local data = split(poly_data)
+	-- if its a string then split it , otherwise just use the table
+	local data = type(poly_data)=="string" and split(poly_data) or poly_data
 	for i=1,#data-1,2 do 
 		local point = add(points,new_point(data[i],data[i+1], points))
 
@@ -91,8 +99,6 @@ end
 function _update60()
 	mouseX_raw,mouseY_raw=stat(32),stat(33)
 
-	update_cursor()
-	update_cursor_ui()
 
 	t+=1
 	if(DEBUGTIME>0)DEBUGTIME-=1
@@ -102,6 +108,9 @@ function _update60()
 	SELECTION_INFO = ""
 	CURSORXYSTRING = "x:" .. (MOUSE_X - MOUSE_X%SNAP) .. " y:" .. (MOUSE_Y - MOUSE_Y%SNAP)
 
+	
+	update_cursor()
+	update_cursor_ui()
 	update_keyboard()
 	-- if(keyboard_tab)show_points = not show_points
 	if keyboard_tab then 
@@ -149,6 +158,11 @@ function _update60()
 		cursor_selection.next.prev = cursor_selection.prev
 		
 		del(ACTIVE_POLY_OBJECT,cursor_selection)
+
+		-- shape has no objects left
+		if #POLYGONS[ACTIVE_POLY_INDEX] < 3 then 
+			delete_polygon(ACTIVE_POLY_INDEX)
+		end
 	end
 
 	-- add new point on left click
@@ -234,10 +248,53 @@ function update_cursor_ui()
 				end
 			end
 		end
+
+		local _x = (#POLYGONS*9)+3
+		if mouseX_raw > _x and mouseX_raw < _x + 9 then 
+			cursor_mode = 2
+
+			if MOUSE_CLICK then 
+				create_polygon(CAMERA_X + 64,CAMERA_Y + 64,split"-10,-10,10,-10,10,10,-10,10")
+				ACTIVE_POLY_INDEX = #POLYGONS
+				ACTIVE_POLY_OBJECT = POLYGONS[#POLYGONS]
+			end
+		end
+
+		if mouseX_raw > modes_ui_x-2 then 
+			for i=0,num_ui_modes-1 do
+				local _x = modes_ui_x-1 + i*9
+
+				if mouseX_raw>_x and mouseX_raw<_x+8 then
+					cursor_mode = 2
+					SELECTION_INFO = modes_names[i+1]
+				end
+			end
+		end
 	end
 end
 
-SNAP = 8
+function delete_polygon(_index)
+	deli(POLYGONS,_index)
+
+	ACTIVE_POLY_INDEX = max(1,ACTIVE_POLY_INDEX-1)
+	ACTIVE_POLY_OBJECT = POLYGONS[ACTIVE_POLY_INDEX]
+
+	debug("polygon deleted")
+end	
+
+function create_polygon(_x, _y, _shape)
+	debug("polygon inserted !")
+
+	local shape = _shape
+	for i=1,#shape,2 do 
+		_shape[i]+=_x 
+		_shape[i+1]+=_y
+	end
+
+	init_polygon(_shape)
+end
+
+SNAP = 2
 function update_point(_point)
 	_point.hover = false
 	_point.line_hover = false
@@ -285,29 +342,41 @@ function _draw()
 	end
 
 
-	-- top ui
-	rectfill(CAMERA_X, CAMERA_Y, CAMERA_X+128, CAMERA_Y+7, 8)
-	for i=1, #POLYGONS do
-		local _x,_y=CAMERA_X+3 + (i-1)*9, CAMERA_Y
-		if(ACTIVE_POLY_INDEX == i)pal(14,7)
-		spr(2, _x, _y)
-		if(ACTIVE_POLY_INDEX == i)pal(14,14)
-		print(i-1, _x+3, _y+2, 8)
+	
+	do	-- top ui
+		rectfill(CAMERA_X, CAMERA_Y, CAMERA_X+128, CAMERA_Y+7, 8)
+		for i=1, #POLYGONS do
+			local _x,_y=CAMERA_X+3 + (i-1)*9, CAMERA_Y
+			if(ACTIVE_POLY_INDEX == i)pal(14,7)
+			spr(2, _x, _y)
+			if(ACTIVE_POLY_INDEX == i)pal(14,14)
+			print(i-1, _x+3, _y+2, 8)
+		end
+		spr(3,CAMERA_X+3 + (#POLYGONS)*9, CAMERA_Y)
+
+		for i=0,num_ui_modes-1 do
+			if(i+1==current_ui_mode)pal(2,15)
+			spr(9+i, CAMERA_X + modes_ui_x + i*9, CAMERA_Y)
+			if(i+1==current_ui_mode)pal(2,2)
+		end
 	end
-	spr(3,CAMERA_X+3 + (#POLYGONS)*9, CAMERA_Y)
 
-	-- bottom ui
-	rectfill(CAMERA_X, CAMERA_Y+121, CAMERA_X+128, CAMERA_Y+128, 8)
-	print(DEBUGTIME>0 and DEBUG or SELECTION_INFO, CAMERA_X+1, CAMERA_Y+122, 2)
-	print(CURSORXYSTRING, CAMERA_X+128 - #CURSORXYSTRING*4, CAMERA_Y+122, 2)
+	do -- bottom ui
+		rectfill(CAMERA_X, CAMERA_Y+121, CAMERA_X+128, CAMERA_Y+128, 8)
+		print(DEBUGTIME>0 and DEBUG or SELECTION_INFO, CAMERA_X+1, CAMERA_Y+122, 2)
+		print(CURSORXYSTRING, CAMERA_X+128 - #CURSORXYSTRING*4, CAMERA_Y+122, 2)
+	end
 
-	if cursor_mode==1 then
-		spr(1,MOUSE_X,MOUSE_Y)
-	elseif cursor_mode==2 then 
-		if MOUSE_HOLD then 
-			sspr(10,8,10,10,MOUSE_X-2, MOUSE_Y)
-		else
-			sspr(0,8,10,10,MOUSE_X-2, MOUSE_Y)
+	do -- cursor
+		local _x,_y = mouseX_raw + CAMERA_X, mouseY_raw + CAMERA_Y
+		if cursor_mode==1 then
+			spr(1,_x,_y)
+		elseif cursor_mode==2 then 
+			if MOUSE_HOLD then 
+				sspr(10,8,10,10,_x - 2,_y)
+			else
+				sspr(0,8,10,10,_x - 2,_y)
+			end
 		end
 	end
 end
@@ -453,14 +522,14 @@ end
 
 
 __gfx__
-00000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000001710000000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700177100000eeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0007700017771000eeeeeeee0000e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0007700017777100eeeeeeee000eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0070070017711000eeeeeeee0000e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000001101000eeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000eeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000010000000000000000000000000000000000000000000000000000000000000088888888888888888888888800000000000000000000000000000000
+000000001710000000eeeeee00000000000000000000000000000000000000000000000088228888822282288888822800000000000000000000000000000000
+00700700177100000eeeeeee00000000000000000000000000000000000000000000000082822888822282288882282800000000000000000000000000000000
+0007700017771000eeeeeeee0000e000000000000000000000000000000000000000000082222828822288888228882800000000000000000000000000000000
+0007700017777100eeeeeeee000eee00000000000000000000000000000000000000000088228228888822288228882800000000000000000000000000000000
+0070070017711000eeeeeeee0000e000000000000000000000000000000000000000000088882288822822288882282800000000000000000000000000000000
+0000000001101000eeeeeeee00000000000000000000000000000000000000000000000088822888822822288888822800000000000000000000000000000000
+0000000000000000eeeeeeee00000000000000000000000000000000000000000000000088888888888888888888888800000000000000000000000000000000
 00010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00171000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00171101000001010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
