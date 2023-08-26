@@ -21,7 +21,7 @@ modes_ui_x = 126 - num_ui_modes*9 		-- horizontal place to start drawing modes u
 
 
 
-#include inf_polygons.txt
+#include inf_mapdata.txt
 
 function _init()
 	t=0
@@ -37,6 +37,9 @@ function _init()
 	POLYGONS = {}
 	foreach(split(poly_library,"\n"),init_polygon)
 	ACTIVE_POLY_INDEX, ACTIVE_POLY_OBJECT = 1, POLYGONS[1]
+
+	PARTS = {}
+
 
 	CAMERA_X,CAMERA_Y=dget(0) or 0,dget(1) or 0
 	CURSOR_IN_UI = false
@@ -113,71 +116,10 @@ function _update60()
 	update_cursor()
 	update_cursor_ui()
 	update_keyboard()
-	-- if(keyboard_tab)show_points = not show_points
-	if keyboard_tab then 
-		ACTIVE_POLY_INDEX = (ACTIVE_POLY_INDEX%#POLYGONS)+1
-		ACTIVE_POLY_OBJECT = POLYGONS[ACTIVE_POLY_INDEX]
-	end
+
 	update_camera()
 
-	foreach(ACTIVE_POLY_OBJECT, update_point)
-	
-	-- check to see if the cursor is hovering over an edge
-	NEW_POINT_PREVIEW = nil
-	if not cursor_selection then
-		local curs = new_point(MOUSE_X, MOUSE_Y)
-		local closest_collision,collided_obj,collision_info = 999,nil,{}
-		for i=1,#ACTIVE_POLY_OBJECT do 
-			local p1,p2 = ACTIVE_POLY_OBJECT[i],ACTIVE_POLY_OBJECT[i].next
-			local col,info=edge_collision(p1,p2,curs)
-			if col and info[4]<closest_collision then 
-				closest_collision = info[4]
-				collided_obj = p1
-				collision_info = info
-			end
-		end	
-
-		if collided_obj then 
-			collided_obj.line_hover = true
-
-			local dist_on_line = collision_info[3]
-			if dist_on_line>.15 and dist_on_line<.85 then
-				NEW_POINT_PREVIEW = new_point(collision_info[1], collision_info[2])
-				NEW_POINT_PREVIEW.data = collision_info
-
-				NEW_POINT_PREVIEW.prev = collided_obj
-				NEW_POINT_PREVIEW.next = collided_obj.next
-
-				SELECTION_INFO = "split line"
-			end
-		end
-	end
-
-	-- delete selection on right click
-	if cursor_selection and MOUSE_RIGHT_RELEASE and abs(drag_update_x)<=2 and abs(drag_update_y)<=2 then 
-		cursor_selection.prev.next = cursor_selection.next 
-		cursor_selection.next.prev = cursor_selection.prev
-		
-		del(ACTIVE_POLY_OBJECT,cursor_selection)
-
-		-- shape has no objects left
-		if #POLYGONS[ACTIVE_POLY_INDEX] < 3 then 
-			delete_polygon(ACTIVE_POLY_INDEX)
-		end
-	end
-
-	-- add new point on left click
-	if NEW_POINT_PREVIEW and MOUSE_CLICK then 
-		local new_point = add(ACTIVE_POLY_OBJECT,new_point(NEW_POINT_PREVIEW.x, NEW_POINT_PREVIEW.y, ACTIVE_POLY_OBJECT))
-
-		NEW_POINT_PREVIEW.prev.next = new_point
-		NEW_POINT_PREVIEW.next.prev = new_point
-
-		new_point.prev = NEW_POINT_PREVIEW.prev
-		new_point.next = NEW_POINT_PREVIEW.next
-
-		new_point.is_dragging = true
-	end
+	if(current_mode=="polygon edit")update_mode_polygon()
 end
 
 function update_keyboard()
@@ -237,30 +179,10 @@ function update_cursor_ui()
 	CURSOR_IN_UI = mouseY_raw < 8 or mouseY_raw > 120
 	cursor_mode = 1
 
-	if mouseY_raw < 8 then
-		for i=1,#POLYGONS do
-			local _x = (i*9)-8
-			if mouseX_raw > _x and mouseX_raw < _x+9 then 
-				cursor_mode = 2
+	if(current_mode=="polygon edit")update_ui_polygon()
+	if(current_mode=="place parts")update_ui_parts()
 
-				if MOUSE_CLICK then 
-					ACTIVE_POLY_INDEX = i 
-					ACTIVE_POLY_OBJECT = POLYGONS[i]
-				end
-			end
-		end
-
-		local _x = (#POLYGONS*9)+3
-		if mouseX_raw > _x and mouseX_raw < _x + 9 then 
-			cursor_mode = 2
-
-			if MOUSE_CLICK then 
-				create_polygon(CAMERA_X + 64,CAMERA_Y + 64,split"-10,-10,10,-10,10,10,-10,10")
-				ACTIVE_POLY_INDEX = #POLYGONS
-				ACTIVE_POLY_OBJECT = POLYGONS[#POLYGONS]
-			end
-		end
-
+	if mouseY_raw < 8 then 
 		if mouseX_raw > modes_ui_x-2 then 
 			for i=0,num_ui_modes-1 do
 				local _x = modes_ui_x-1 + i*9
@@ -271,8 +193,13 @@ function update_cursor_ui()
 
 					-- change mode
 					if MOUSE_CLICK then 
-						current_mode_index = i+1
+						local mode_index = i+1
+						current_mode_index = mode_index
 						current_mode = modes_names[current_mode_index]
+
+						if mode_index==2 then 
+							goto_parts()
+						end
 					end
 				end
 			end
@@ -378,6 +305,100 @@ end
 
 
 ---------------------------------------------------- POLYGON EDIT
+function update_mode_polygon()
+	-- if(keyboard_tab)show_points = not show_points
+	if keyboard_tab then 
+		ACTIVE_POLY_INDEX = (ACTIVE_POLY_INDEX%#POLYGONS)+1
+		ACTIVE_POLY_OBJECT = POLYGONS[ACTIVE_POLY_INDEX]
+	end
+
+	foreach(ACTIVE_POLY_OBJECT, update_point)
+
+	-- check to see if the cursor is hovering over an edge
+	NEW_POINT_PREVIEW = nil
+	if not cursor_selection then
+		local curs = new_point(MOUSE_X, MOUSE_Y)
+		local closest_collision,collided_obj,collision_info = 999,nil,{}
+		for i=1,#ACTIVE_POLY_OBJECT do 
+			local p1,p2 = ACTIVE_POLY_OBJECT[i],ACTIVE_POLY_OBJECT[i].next
+			local col,info=edge_collision(p1,p2,curs)
+			if col and info[4]<closest_collision then 
+				closest_collision = info[4]
+				collided_obj = p1
+				collision_info = info
+			end
+		end	
+
+		if collided_obj then 
+			collided_obj.line_hover = true
+
+			local dist_on_line = collision_info[3]
+			if dist_on_line>.15 and dist_on_line<.85 then
+				NEW_POINT_PREVIEW = new_point(collision_info[1], collision_info[2])
+				NEW_POINT_PREVIEW.data = collision_info
+
+				NEW_POINT_PREVIEW.prev = collided_obj
+				NEW_POINT_PREVIEW.next = collided_obj.next
+
+				SELECTION_INFO = "split line"
+			end
+		end
+	end
+
+	-- delete selection on right click
+	if cursor_selection and MOUSE_RIGHT_RELEASE and abs(drag_update_x)<=2 and abs(drag_update_y)<=2 then 
+		cursor_selection.prev.next = cursor_selection.next 
+		cursor_selection.next.prev = cursor_selection.prev
+		
+		del(ACTIVE_POLY_OBJECT,cursor_selection)
+
+		-- shape has no objects left
+		if #POLYGONS[ACTIVE_POLY_INDEX] < 3 then 
+			delete_polygon(ACTIVE_POLY_INDEX)
+		end
+	end
+
+	-- add new point on left click
+	if NEW_POINT_PREVIEW and MOUSE_CLICK then 
+		local new_point = add(ACTIVE_POLY_OBJECT,new_point(NEW_POINT_PREVIEW.x, NEW_POINT_PREVIEW.y, ACTIVE_POLY_OBJECT))
+
+		NEW_POINT_PREVIEW.prev.next = new_point
+		NEW_POINT_PREVIEW.next.prev = new_point
+
+		new_point.prev = NEW_POINT_PREVIEW.prev
+		new_point.next = NEW_POINT_PREVIEW.next
+
+		new_point.is_dragging = true
+	end
+end
+
+function update_ui_polygon()
+	if mouseY_raw < 8 then
+		for i=1,#POLYGONS do
+			local _x = (i*9)-8
+			if mouseX_raw > _x and mouseX_raw < _x+9 then 
+				cursor_mode = 2
+
+				if MOUSE_CLICK then 
+					ACTIVE_POLY_INDEX = i 
+					ACTIVE_POLY_OBJECT = POLYGONS[i]
+				end
+			end
+		end
+
+		local _x = (#POLYGONS*9)+3
+		if mouseX_raw > _x and mouseX_raw < _x + 9 then 
+			cursor_mode = 2
+
+			if MOUSE_CLICK then 
+				create_polygon(CAMERA_X + 64,CAMERA_Y + 64,split"-10,-10,10,-10,10,10,-10,10")
+				ACTIVE_POLY_INDEX = #POLYGONS
+				ACTIVE_POLY_OBJECT = POLYGONS[#POLYGONS]
+			end
+		end
+	end
+end
+
 function draw_mode_polygon()
 	for _poly in all(POLYGONS) do
 		if(_poly!=ACTIVE_POLY_OBJECT)draw_poly(_poly)
@@ -401,20 +422,154 @@ function draw_ui_polygon()
 end
 
 
----------------------------------------------------- PLACE POLYGONS
+---------------------------------------------------- PLACE PARTS
+
+function goto_parts()
+	show_selector = false
+
+	part_option_texts=split"flipper,bumper,pop bumper,ramp"
+
+	placable,selected = nil,nil
+end
+
+function update_ui_parts()
+	if mouseY_raw < 8 then 
+
+		if mouseX_raw >= 1 and mouseX_raw < 28 then 
+
+			-- kill placable
+			placable = nil
+
+			show_selector = true
+		end
+	end
+
+	local placed_on_frame = false
+	-- place one down
+	if placable then
+		placable.x = MOUSE_X 
+		placable.y = MOUSE_Y
+
+		if MOUSE_CLICK then 
+			add(PARTS,placable)
+			placable = nil
+
+			placed_on_frame=true
+		elseif MOUSE_RIGHT_RELEASE and drag_update_x <3 and drag_update_y <3 then
+			placable = nil
+		end
+	end
+	debug(#PARTS)
+
+	-- click and pick up placed obbjects
+	local mx,my = MOUSE_X, MOUSE_Y
+	local hover_part = nil
+	for part in all(PARTS) do 
+		local dist = calc_dist2(part.x, part.y, MOUSE_X, MOUSE_Y)
+
+		part.hover = dist<10
+
+		if(part.hover)hover_part = part
+	end
+	if(hover_part and not placable and MOUSE_CLICK and not placed_on_frame)placable = hover_part del(PARTS, hover_part)
+	
+end
+
+function new_part_placable(_type)
+	show_selector = false
+	place_object = true
+
+	placable = {
+		x = MOUSE_X,
+		y = MOUSE_Y,
+
+		type = _type
+	}
+
+	if _type == "flipper" then 
+		placable.rest_direction = .82
+		placable.length = 15
+	end
+end
+
 function draw_mode_parts()
 	for _poly in all(POLYGONS) do
 		foreach(_poly,draw_iPointLine)
 	end
+
+	foreach(PARTS, draw_placable)
+
+	-- draw current placing object thing
+	if placable then 
+		draw_placable(placable)
+	end
 end
+
+function draw_placable(_p)
+	local sel = _p == placable or _p == selected 
+	
+	local rad = 3
+	local col = sel and 7 or _p.hover and 6 or 13
+
+	circfill(_p.x, _p.y, rad, 0)
+	circ(_p.x, _p.y, rad, col)
+
+	if _p.type == "flipper" then 
+		local x2,y2 = _p.x + sin(_p.rest_direction) * _p.length, _p.y + cos(_p.rest_direction) * _p.length
+		line(_p.x, _p.y, x2, y2, col)
+	end
+end
+
+
+
 
 function draw_ui_parts()
+	if(show_selector)pal(14,2)
+	spr(2, CAMERA_X + 3, CAMERA_Y)
+	if(show_selector)pal(14,14)
+	rectfill(CAMERA_X + 6, CAMERA_Y + 1, CAMERA_X + 26, CAMERA_Y + 7, show_selector and 2 or 14)
+	print("parts", CAMERA_X + 6, CAMERA_Y + 2, 8)
 
+
+	if show_selector then 
+		local found = false
+		for i=1,#part_option_texts do 
+			local _text = part_option_texts[i]
+
+			local _x,_y,_w,_h = 3, 9 + (i-1)*7,#_text*4, 6
+
+			-- the max line is some arbitrary minumum width to make it a bit nicer
+			local hover = mouse_hb(3, 7 + (i-1)*7,max(40, #_text*4), 8)
+			if hover then 
+				found = true
+				SELECTION_INFO = "create " .. _text
+				
+				-- clicked on button to make new object
+				if MOUSE_CLICK then 
+					new_part_placable(_text)
+				end
+			end
+
+			local _x,_y,_w,_h = CAMERA_X + 3, CAMERA_Y + 8 + (i-1)*7,#_text*4, 6
+			rectfill(_x,_y,_x+_w,_y+_h,hover and 7 or 14)
+
+			print(_text, _x + 1, _y + 1, hover and 14 or 7)
+		end
+		if not (CURSOR_IN_UI and MOUSE_X < 64) and not found then 
+			show_selector = false
+		else
+			if(mouseY_raw>8)cursor_mode=2
+		end
+	end
+end
+
+function mouse_hb(_x, _y, _w, _h)
+	return mouseX_raw > _x and mouseX_raw < _x + _w and mouseY_raw > _y and mouseY_raw < _y + _h
 end
 
 
 
-
+---------------------------------------------------- ELSE
 function draw_checkerboard(_col)
 	--[[
 	local width = 32
@@ -427,7 +582,7 @@ function draw_checkerboard(_col)
 	]]--
 
 	fillp(▒)
-	local width = 32
+	local width = 16
 	for x=-2,128/width,1 do
 		for y=-2,128/width,1 do
 			local _x,_y = CAMERA_X + x*width - CAMERA_X%width, CAMERA_Y + y*width - CAMERA_Y%width
@@ -525,14 +680,12 @@ function export_data()
 
 	
 	local out = "poly_library=[["
-
 	for _poly in all(POLYGONS) do
 		out..=poly_to_string(_poly) .. "\n"
 	end
-
 	out = sub(out,1,-2).."]]"
 
-	printh(out, "inf_polygons.txt", true)
+	printh(out, "inf_mapdata.txt", true)
 end
 
 function poly_to_string(_polygon)
@@ -554,12 +707,12 @@ end
 
 __gfx__
 00000000010000000000000000000000000000000000000000000000000000000000000088888888888888888888888800000000000000000000000000000000
-000000001710000000eeeeee00000000000000000000000000000000000000000000000088228888822282288888822800000000000000000000000000000000
-00700700177100000eeeeeee00000000000000000000000000000000000000000000000082822888822282288882282800000000000000000000000000000000
-0007700017771000eeeeeeee0000e000000000000000000000000000000000000000000082222828822288888228882800000000000000000000000000000000
-0007700017777100eeeeeeee000eee00000000000000000000000000000000000000000088228228888822288228882800000000000000000000000000000000
-0070070017711000eeeeeeee0000e000000000000000000000000000000000000000000088882288822822288882282800000000000000000000000000000000
-0000000001101000eeeeeeee00000000000000000000000000000000000000000000000088822888822822288888822800000000000000000000000000000000
+000000001710000000eeeeee00000000000000000000000000000000000000000000000088228888822222288888822800000000000000000000000000000000
+00700700177100000eeeeeee00000000000000000000000000000000000000000000000082822888828888288882282800000000000000000000000000000000
+0007700017771000eeeeeeee0000e000000000000000000000000000000000000000000082222828828888288228882800000000000000000000000000000000
+0007700017777100eeeeeeee000eee00000000000000000000000000000000000000000088228228822222288228882800000000000000000000000000000000
+0070070017711000eeeeeeee0000e000000000000000000000000000000000000000000088882288822882288882282800000000000000000000000000000000
+0000000001101000eeeeeeee00000000000000000000000000000000000000000000000088822888822882288888822800000000000000000000000000000000
 0000000000000000eeeeeeee00000000000000000000000000000000000000000000000088888888888888888888888800000000000000000000000000000000
 00010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00171000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000

@@ -12,16 +12,18 @@ deltaTime = 1
 LEFT_FLIPPER,RIGHT_FLIPPER = false, false
 FLIPPER_SPEED = .2
 
-PHYSICS_SPEED = .75
+PHYSICS_SPEED = 1
 PHYSICS_STEPS = 8
 
 STOP_SIM = false
 BALL_RADIUS = 4.5
 
-#include inf_polygons.txt
+BALL_MAX_VELOCITY = 7
+
+#include inf_mapdata.txt
 
 function debug(_text, _time)
-	DEBUG = tostring(_text)
+	DEBUG = tostr(_text)
 	DEBUGTIME = _time or 90
 end
 
@@ -145,7 +147,7 @@ function _update60()
 	local ball = BALLS[1]
 
 	local cam_lerp_speed = .05 + lerp(0,.1,min(abs(ball.dirX)+abs(ball.dirY),5)/5)
-	local target_x, target_y = mid(62, ball.x + ball.dirX, 76) , ball.y + ball.dirY * 8
+	local target_x, target_y = mid(62, ball.x + ball.dirX, 76) , min(ball.y + ball.dirY * 8, 90)
 
 	CAMERA_X,CAMERA_Y = lerp(CAMERA_X, target_x, cam_lerp_speed), lerp(CAMERA_Y, target_y, cam_lerp_speed)	
 	camera(flr(CAMERA_X + cam_ox), flr(CAMERA_Y + cam_oy))
@@ -174,12 +176,6 @@ function _draw()
 	if (#POINTS>30) deli(POINTS,1)
 
 	print(DEBUG, CAMERA_X + cam_ox + 1, CAMERA_Y + cam_oy + 1,0)
-
-	local debug2 = tostring(LEFT_FLIPPER) .. " " .. tonum(LEFT_FLIPPER) .. "\n" .. tostring(RIGHT_FLIPPER)
-	print(debug2, 1, 100)
-
-
-	print(PHYSICS_SPEED, 128 - #tostring(PHYSICS_SPEED)*4, 1)
 end
 
 function draw_point(_point)
@@ -322,6 +318,11 @@ function update_ball(_ball)
 			end
 		end
 	end
+
+	_ball.dirX = mid(-BALL_MAX_VELOCITY, _ball.dirX, BALL_MAX_VELOCITY)
+	_ball.dirY = mid(-BALL_MAX_VELOCITY, _ball.dirY, BALL_MAX_VELOCITY)
+
+	if(_ball.y>180)_ball.x, _ball.y, _ball.dirY = 64,64,-_ball.dirY
 end
 
 -- ran for each edge and applies physics stuff to it
