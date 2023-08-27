@@ -375,16 +375,11 @@ function update_ball(_ball)
 	if(_ball.y>180)_ball.x, _ball.y, _ball.dirX, _ball.dirY = 92,112, 0, 0
 end
 
+-- todo completely refactor this
 -- ran for each edge and applies physics stuff to it
 function wall_col(_wall, _ball)
 	local col,point = edge_collision(_wall.a, _wall.b, _ball)
-	if col then
-			-- old performant version , still might use  
-			-- makes use of pre-calculated normals
-		-- _ball.x, _ball.y = point[1]+point[4]*BALL_RADIUS,point[2]-point[3]*BALL_RADIUS
-		-- local wall_direction=new_point(point[4],-point[3])
-
-		
+	if col then		
 		local dirX, dirY, length = get_direction_of_vector(convert_points_to_vector(new_point(point[1],point[2]),_ball))
 		_ball.x, _ball.y = point[1] + dirX * BALL_RADIUS, point[2] + dirY * BALL_RADIUS
 
@@ -397,13 +392,14 @@ function wall_col(_wall, _ball)
 
 		local friction = .8
 
+		-- an extra check to see if the ball is "skimming" the wall , in which case don't bounce it too much- I guess
 		local skim_check = dot_product({x=_ball.n_dirX, y=_ball.n_dirY},wall_direction)
-		if abs(skim_check)<.5 then 
+		if abs(skim_check)<.3 then 
 			debug(tostr(t) .. "\n" .. skim_check)
 			dx = dirX
 			dy = dirY
 
-			friction = .9
+			friction = .3
 		end
 
 		--[[
