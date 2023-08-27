@@ -3,20 +3,20 @@ version 41
 __lua__
 -- init
 
-GRAVITY =  .1
+GRAVITY =  .08
 DEBUG = ""
 DEBUGTIME = 90
 
 deltaTime = 1
 
 LEFT_FLIPPER,RIGHT_FLIPPER = false, false
-FLIPPER_SPEED = .2
+FLIPPER_SPEED = .3
 
-PHYSICS_SPEED = 1
-PHYSICS_STEPS = 8
+PHYSICS_SPEED = .9
+PHYSICS_STEPS = 4
 
 STOP_SIM = false
-BALL_RADIUS = 4.5
+BALL_RADIUS = 5
 
 BALL_MAX_VELOCITY = 7
 
@@ -40,7 +40,9 @@ function _init()
 	WALLS={}
 	foreach(split(poly_library,"\n"),init_walls)
 
-	FLIPPERS = {}
+	FLIPPERS = {}		-- todo remove evntually
+	PARTS = {}
+	foreach(split(part_library,"\n"),init_part)
 
 	new_flipper(44, 116, 20, .82, -.12, false)
 	new_flipper(94, 116, 20, .18, .12, true)
@@ -51,6 +53,16 @@ function _init()
 
 
 	CAMERA_X, CAMERA_Y = 64,64
+end
+
+function init_part(_data)
+	local data, part = split(_data), {}
+	part.type, part.x, part.y = data[1], data[2], data[3]
+
+	if part.type=="flipper" then 
+		new_flipper(part.x, part.y, data[4], data[5], -.12, false)
+	end
+	
 end
 
 function init_walls(_data)
@@ -94,6 +106,12 @@ function new_ball(_tx, _ty)
 
 		dirX = 0,
 		dirY = 0,
+
+		-- normalised direction
+		n_dirX = 0,
+		n_dirY = 0,
+
+		additive_velocity = 0,
 	}
 
 	return add(BALLS, pinball)
@@ -119,6 +137,8 @@ end
 -- update
 function _update60()
 	t+=1
+
+	if(btnp"2")STOP_SIM=false
 
 	if(DEBUGTIME>=0)DEBUGTIME-=1
 	if(DEBUGTIME==0)DEBUG = ""
@@ -184,9 +204,10 @@ end
 
 function draw_ball(_ball)
 	sspr(0,0,11,11,flr(_ball.x)-5,flr(_ball.y)-5)
-	pset(_ball.x, _ball.y, 7)
 	dirX,dirY=get_direction_of_vector(_ball.dirX, _ball.dirY)
 	line(_ball.x, _ball.y, _ball.x + _ball.dirX *2, _ball.y + _ball.dirY *2, 7)
+	pset(_ball.x, _ball.y, t)
+
 end
 
 function draw_flipper(_flipper)
@@ -255,7 +276,7 @@ function update_flipper(_flipper)
 		_flipper.active_perc = mid(0, _flipper.active_perc + movement, 1)
 
 		-- update the fliper tip location
-		local direction = _flipper.rest_direction + lerp(0, _flipper.extend_amount, easeInCubic(_flipper.active_perc))
+		local direction = _flipper.rest_direction + lerp(0, _flipper.extend_amount, easeOutCubic(_flipper.active_perc))
 		_flipper.direction = direction
 		_flipper.tip.x = _flipper.x + sin(direction) * _flipper.length
 		_flipper.tip.y = _flipper.y + cos(direction) * _flipper.length
@@ -304,11 +325,34 @@ function update_ball(_ball)
 					-- "velocity = change_in_position / dt."
 				local velocityX, velocityY = deltaX / deltaTime, deltaY / deltaTime
 
-				add_force(_ball, velocityX * friction, velocityY * friction, false)
+				-- debug(velocityX .. "," .. velocityY)
+
+				friction = .9
+
+				-- if it hits the edge of a flipper then send it on an angle
+				if point[3]==1 or point[3]==0 then 
+					debug("angled hit !")
+
+					local wall_direction=new_point(dirX, dirY)
+
+					-- set to abs as to not flip ball direction
+					-- terrible work around , but it works so :/
+					velocityX *= abs(wall_direction.x)
+					velocityY *= abs(wall_direction.y)
+				end
+
+				-- horrible debug test physics stuff please remove
+				-- makes vertical shots a bit easier from an idle ball
+				--[[
+				if(_ball.additive_velocity<1)velocityY+=5 * (1-_ball.additive_velocity)
+				debug(5 * (1-_ball.additive_velocity))
+				]]--
+
+				add_force(_ball, velocityX * friction, velocityY * friction * 1.2, false)
 			else
 				local wall_direction=new_point(dirX, dirY)
 
-				local dot = dot_product({x=_ball.dirX, y=_ball.dirY},wall_direction)
+				local dot = dot_product(new_point(_ball.dirX, _ball.dirY),wall_direction)
 
 				local dx = -wall_direction.x * 2 * dot
 				local dy = -wall_direction.y * 2 * dot
@@ -322,7 +366,13 @@ function update_ball(_ball)
 	_ball.dirX = mid(-BALL_MAX_VELOCITY, _ball.dirX, BALL_MAX_VELOCITY)
 	_ball.dirY = mid(-BALL_MAX_VELOCITY, _ball.dirY, BALL_MAX_VELOCITY)
 
-	if(_ball.y>180)_ball.x, _ball.y, _ball.dirY = 64,64,-_ball.dirY
+	local dist=calc_dist2(_ball.x, _ball.y, _ball.x + _ball.dirX, _ball.y + _ball.dirY)
+	_ball.n_dirX, _ball.n_dirY = _ball.dirX / dist, _ball.dirY / dist -- normalised direction ?
+
+	_ball.additive_velocity = abs(_ball.dirX) + abs(_ball.dirY)
+	-- debug(_ball.additive_velocity)
+
+	if(_ball.y>180)_ball.x, _ball.y, _ball.dirX, _ball.dirY = 92,112, 0, 0
 end
 
 -- ran for each edge and applies physics stuff to it
@@ -347,8 +397,27 @@ function wall_col(_wall, _ball)
 
 		local friction = .8
 
+		local skim_check = dot_product({x=_ball.n_dirX, y=_ball.n_dirY},wall_direction)
+		if abs(skim_check)<.5 then 
+			debug(tostr(t) .. "\n" .. skim_check)
+			dx = dirX
+			dy = dirY
+
+			friction = .9
+		end
+
+		--[[
+		local dx = dirX
+		local dy = dirY
+		]]--
+
+
 		add_force(_ball, dx * friction, dy * friction, false)
 	end
+end
+
+function normalise(_vx, _vy)
+
 end
 
 -- returns true if collision between ball and edge
@@ -400,6 +469,11 @@ end
 -- tools
 function easeInCubic(_t)
 	return _t * _t * _t
+end
+
+function easeOutCubic(t)
+    t-=1
+    return 1-t*t
 end
 
 function lerp(a,b,t) 

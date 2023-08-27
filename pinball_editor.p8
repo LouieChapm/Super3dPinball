@@ -39,13 +39,14 @@ function _init()
 	ACTIVE_POLY_INDEX, ACTIVE_POLY_OBJECT = 1, POLYGONS[1]
 
 	PARTS = {}
-
+	
 
 	CAMERA_X,CAMERA_Y=dget(0) or 0,dget(1) or 0
 	CURSOR_IN_UI = false
 
 	NEW_POINT_PREVIEW = {}
 end
+
 
 function init_polygon(poly_data)
 	local points={}
@@ -447,15 +448,15 @@ function update_ui_parts()
 	local placed_on_frame = false
 	-- place one down
 	if placable then
-		placable.x = MOUSE_X 
-		placable.y = MOUSE_Y
+		placable.x = mouseX_raw + CAMERA_X
+		placable.y = mouseY_raw + CAMERA_Y
 
 		if MOUSE_CLICK then 
 			add(PARTS,placable)
 			placable = nil
 
 			placed_on_frame=true
-		elseif MOUSE_RIGHT_RELEASE and drag_update_x <3 and drag_update_y <3 then
+		elseif MOUSE_RIGHT_RELEASE and drag_update_x <1 and drag_update_y <1 then
 			placable = nil
 		end
 	end
@@ -488,7 +489,7 @@ function new_part_placable(_type)
 
 	if _type == "flipper" then 
 		placable.rest_direction = .82
-		placable.length = 15
+		placable.length = 20
 	end
 end
 
@@ -685,9 +686,28 @@ function export_data()
 	end
 	out = sub(out,1,-2).."]]"
 
+	out..="\npart_library=[["
+	for _part in all(PARTS) do 
+		out..=part_to_string(_part) .. "\n"
+	end
+	if(#PARTS>0)out = sub(out,1,-2)
+	out..="]]"
+
 	printh(out, "inf_mapdata.txt", true)
 end
 
+-- contains all the little info to convert a part into a string
+function part_to_string(_part)
+	local out = table_to_string({_part.type, _part.x, _part.y})
+
+	if _part.type == "flipper" then 
+		out..=","..table_to_string({_part.length, _part.rest_direction})
+	end
+
+	return out
+end
+
+-- converts a polygon into a big string of variables
 function poly_to_string(_polygon)
 	local out = ""
 
@@ -702,6 +722,16 @@ function poly_to_string(_polygon)
 
 	return sub(out,1,-2)
 end
+
+-- converts a table into a string , yay
+function table_to_string(_table)
+	local out = ""
+	for item in all(_table) do 
+		out..=item ..","
+	end
+	return sub(out,1,-2)
+end
+
 
 
 
