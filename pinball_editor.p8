@@ -10,6 +10,8 @@ CURSORXYSTRING = ""
 
 cursor_selection = nil
 
+-- drag_next starts a drag on the next avaiable frame
+can_drag, drag_next = true, -1
 drag_update_x, drag_update_y=0,0
 
 show_points = true
@@ -109,6 +111,8 @@ function _update60()
 	if(DEBUGTIME>0)DEBUGTIME-=1
 	if(DEBUGTIME==0)DEBUG=""
 
+	debug(#PARTS)
+
 	cursor_selection=nil
 	SELECTION_INFO = ""
 	CURSORXYSTRING = "x:" .. (MOUSE_X - MOUSE_X%SNAP) .. " y:" .. (MOUSE_Y - MOUSE_Y%SNAP)
@@ -128,15 +132,20 @@ function update_keyboard()
 
 	keyboard_tab = false
 	if(p=="\t")keyboard_tab=true
+
+	keyboard_enter = false
+	if(p=="\r")keyboard_enter=true
 end
 
 function update_camera()
 	local speed=3
 
-	if(btn(⬅️))CAMERA_X-=speed
-	if(btn(➡️))CAMERA_X+=speed
-	if(btn(⬆️))CAMERA_Y-=speed
-	if(btn(⬇️))CAMERA_Y+=speed
+	if can_drag then
+		if(btn(⬅️))CAMERA_X-=speed
+		if(btn(➡️))CAMERA_X+=speed
+		if(btn(⬆️))CAMERA_Y-=speed
+		if(btn(⬇️))CAMERA_Y+=speed
+	end
 
 	if CAMERA_DRAGGING then 
 		CAMERA_X = cam_origin_x + drag_update_x
@@ -160,20 +169,24 @@ function update_cursor()
 	MOUSE_RIGHT_RELEASE = MOUSE_RIGHT and stat34&2!=2
 	MOUSE_RIGHT=stat34&2==2
 
-	if MOUSE_RIGHT_CLICK then 
-		CAMERA_DRAGGING = true 
-
-		cam_origin_x, cam_origin_y = CAMERA_X, CAMERA_Y 
-		drag_origin_x,drag_origin_y = mouseX_raw, mouseY_raw
+	if MOUSE_RIGHT_CLICK and can_drag or drag_next==t then 
+		start_drag()
 	end
 
-	if CAMERA_DRAGGING then 
+	if CAMERA_DRAGGING and can_drag then 
 		drag_update_x, drag_update_y = drag_origin_x - mouseX_raw, drag_origin_y - mouseY_raw
 	end
 
 	if CAMERA_DRAGGING and not MOUSE_RIGHT then 
 		CAMERA_DRAGGING = false
 	end
+end
+
+function start_drag()
+	CAMERA_DRAGGING = true 
+
+	cam_origin_x, cam_origin_y = CAMERA_X, CAMERA_Y 
+	drag_origin_x,drag_origin_y = mouseX_raw, mouseY_raw
 end
 
 function update_cursor_ui()
@@ -433,15 +446,27 @@ function goto_parts()
 	placable,selected = nil,nil
 end
 
+part_x,part_y,part_w,part_h=80,30,32,60
 function update_ui_parts()
 	if mouseY_raw < 8 then 
-
 		if mouseX_raw >= 1 and mouseX_raw < 28 then 
 
 			-- kill placable
 			placable = nil
 
 			show_selector = true
+		end
+	end
+
+	local hover = mouse_hb(part_x, part_y, part_w + 2, part_h)
+	if selected and not hover then 
+		if MOUSE_CLICK or MOUSE_RIGHT_CLICK then 
+			new_selected()
+
+			-- allow you to drag straight away
+			if MOUSE_RIGHT_CLICK then 
+				drag_next = t+1
+			end
 		end
 	end
 
@@ -453,14 +478,16 @@ function update_ui_parts()
 
 		if MOUSE_CLICK then 
 			add(PARTS,placable)
-			placable = nil
 
+			new_selected(placable)
+
+			placable = nil
 			placed_on_frame=true
+
 		elseif MOUSE_RIGHT_RELEASE and drag_update_x <1 and drag_update_y <1 then
 			placable = nil
 		end
 	end
-	debug(#PARTS)
 
 	-- click and pick up placed obbjects
 	local mx,my = MOUSE_X, MOUSE_Y
@@ -472,7 +499,11 @@ function update_ui_parts()
 
 		if(part.hover)hover_part = part
 	end
-	if(hover_part and not placable and MOUSE_CLICK and not placed_on_frame)placable = hover_part del(PARTS, hover_part)
+	-- click on object on map
+	if hover_part and not placable and MOUSE_CLICK and not placed_on_frame then 
+		new_selected(hover_part)
+		-- del(PARTS, hover_part)
+	end
 	
 end
 
@@ -484,7 +515,8 @@ function new_part_placable(_type)
 		x = MOUSE_X,
 		y = MOUSE_Y,
 
-		type = _type
+		type = _type,
+		name = "prtnme",
 	}
 
 	if _type == "flipper" then 
@@ -562,12 +594,86 @@ function draw_ui_parts()
 			if(mouseY_raw>8)cursor_mode=2
 		end
 	end
+
+	if(selected)draw_part_editor(selected,30,30)
 end
 
 function mouse_hb(_x, _y, _w, _h)
 	return mouseX_raw > _x and mouseX_raw < _x + _w and mouseY_raw > _y and mouseY_raw < _y + _h
 end
 
+function new_selected(_part)
+	selected = _part or nil
+	part_mouse_controls = true
+
+	selinfo_index = 1
+	if _part then 
+		can_drag = false
+	else 
+		can_drag = true
+	end
+end
+
+part_settings = {
+	split"lft,rst,frc", -- flipper
+	split"pwr",
+	split"frc",
+}
+function draw_part_editor(_part)
+	local colours = split"0,1,7,0,0"
+	local _x,_y = CAMERA_X + 80, CAMERA_Y + 30
+	local _w,_h = 32, 60
+
+	for i=4,0,-1 do 
+		rectfill(_x-i,_y-i,_x+_w+i,_y+_h+i,colours[i+1])
+	end
+
+	print("edit", _x + _w*.5 + tcentre("edit"), _y + 1, 6)
+	print('"' .. selected.name .. '"', _x + 1, _y+7, 7)
+
+	local _test = part_settings[1]
+	for i=1,#_test do 
+		local _text, y = _test[i], _y+11+i*6
+
+		local data = "11"
+		if _text == "lft" then 
+			data = ""
+
+			local x = _x + 27
+			rect(x, y, x + 4, y+4, 7)
+
+			if(true)spr(5, x, y)
+		end
+
+		print(_text, _x+5, y ,6)
+		print(data, _x+_w+tright(data), y ,7)
+
+		local hover = mouse_hb(_x - CAMERA_X, y - CAMERA_Y - 1, _w, 6)
+		if part_mouse_controls and hover then 
+			-- clicking on the UI
+			if MOUSE_CLICK then 
+				debug("clicked !")
+			end
+		end
+		if(part_mouse_controls and hover or not part_mouse_controls and i==selinfo_index)spr(4, _x-3, y-1)
+
+		local move_hover = mouse_hb(_x - CAMERA_X, _y + _h - 7 - CAMERA_Y, _w, 8)
+		print("<move>", _x+_w*.5+tcentre("<move>"), _y + _h - 5, move_hover and 7 or 6)
+		-- relocate the piece
+		if move_hover and MOUSE_CLICK then 
+			placable, selected = selected, placable
+			del(PARTS,placable)
+		end
+	end
+end
+
+function tcentre(_text)
+	return #_text*-2+1
+end
+
+function tright(_text)
+	return #_text*-4+2
+end
 
 
 ---------------------------------------------------- ELSE
@@ -737,11 +843,11 @@ end
 
 __gfx__
 00000000010000000000000000000000000000000000000000000000000000000000000088888888888888888888888800000000000000000000000000000000
-000000001710000000eeeeee00000000000000000000000000000000000000000000000088228888822222288888822800000000000000000000000000000000
-00700700177100000eeeeeee00000000000000000000000000000000000000000000000082822888828888288882282800000000000000000000000000000000
-0007700017771000eeeeeeee0000e000000000000000000000000000000000000000000082222828828888288228882800000000000000000000000000000000
-0007700017777100eeeeeeee000eee00000000000000000000000000000000000000000088228228822222288228882800000000000000000000000000000000
-0070070017711000eeeeeeee0000e000000000000000000000000000000000000000000088882288822882288882282800000000000000000000000000000000
+000000001710000000eeeeee00000000000070000777000000000000000000000000000088228888822222288888822800000000000000000000000000000000
+00700700177100000eeeeeee00000000000077000777000000000000000000000000000082822888828888288882282800000000000000000000000000000000
+0007700017771000eeeeeeee0000e000000077700777000000000000000000000000000082222828828888288228882800000000000000000000000000000000
+0007700017777100eeeeeeee000eee00000077000000000000000000000000000000000088228228822222288228882800000000000000000000000000000000
+0070070017711000eeeeeeee0000e000000070000000000000000000000000000000000088882288822882288882282800000000000000000000000000000000
 0000000001101000eeeeeeee00000000000000000000000000000000000000000000000088822888822882288888822800000000000000000000000000000000
 0000000000000000eeeeeeee00000000000000000000000000000000000000000000000088888888888888888888888800000000000000000000000000000000
 00010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000

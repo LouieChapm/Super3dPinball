@@ -13,7 +13,7 @@ LEFT_FLIPPER,RIGHT_FLIPPER = false, false
 FLIPPER_SPEED = .3
 
 PHYSICS_SPEED = .9
-PHYSICS_STEPS = 4
+PHYSICS_STEPS = 8
 
 STOP_SIM = false
 BALL_RADIUS = 5
@@ -327,6 +327,7 @@ function update_ball(_ball)
 
 				-- debug(velocityX .. "," .. velocityY)
 
+
 				friction = .9
 
 				-- if it hits the edge of a flipper then send it on an angle
@@ -375,7 +376,7 @@ function update_ball(_ball)
 	if(_ball.y>180)_ball.x, _ball.y, _ball.dirX, _ball.dirY = 92,112, 0, 0
 end
 
--- todo completely refactor this
+-- TODO completely refactor this
 -- ran for each edge and applies physics stuff to it
 function wall_col(_wall, _ball)
 	local col,point = edge_collision(_wall.a, _wall.b, _ball)
