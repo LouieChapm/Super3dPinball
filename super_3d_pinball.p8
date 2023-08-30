@@ -44,10 +44,10 @@ function _init()
 	PARTS = {}
 	foreach(split(part_library,"\n"),init_part)
 
-	new_flipper(44, 116, 20, .82, -.12, false)
-	new_flipper(94, 116, 20, .18, .12, true)
+	-- new_flipper(44, 116, 20, .82, -.12, false)
+	-- new_flipper(94, 116, 20, .18, .12, true)
 
-	new_flipper(137, 10, 20, .08, .1, true)
+	-- new_flipper(137, 10, 20, .08, .1, true)
 
 	POINTS = {}
 
@@ -55,14 +55,13 @@ function _init()
 	CAMERA_X, CAMERA_Y = 64,64
 end
 
-function init_part(_data)
-	local data, part = split(_data), {}
-	part.type, part.x, part.y = data[1], data[2], data[3]
+function init_part(_datastr)
+	local data = split(_datastr)
+	local part_type = deli(data,1)
 
-	if part.type=="flipper" then 
-		new_flipper(part.x, part.y, data[4], data[5], -.12, false)
+	if part_type=="flipper" then 
+		new_flipper(data)
 	end
-	
 end
 
 function init_walls(_data)
@@ -73,26 +72,30 @@ function init_walls(_data)
 	new_wall(data[#data-1],data[#data],data[1],data[2])
 end
 
-function new_flipper(_x, _y, _length, _dir, _extendAmount, _is_right)
+function new_flipper(_data) -- _length, _dir, _extendAmount, _is_right)
+	local name, _x, _y, is_left, _length, _rest, _extend = unpack(_data)
+
+	debug(is_left)
+
 	local flipper={
 		x= _x,
 		y= _y,
 
-		is_right = _is_right,
+		is_left = is_left=="true",
 
 		length = _length,				-- flipper length , what did you expect ?
 
-		prev_dir = _dir,
-		direction = _dir,				-- the actual direction the flipper is currently facing
-		rest_direction = _dir,			-- the resting direction
-		extend_amount = _extendAmount,	-- the amount the flipper rotates
+		prev_dir = _rest,
+		direction = _rest,				-- the actual direction the flipper is currently facing
+		rest_direction = _rest,			-- the resting direction
+		extend_amount = _extend,	-- the amount the flipper rotates
 
 		is_active = false,
 		active_perc = 0,						-- number between 0-1 for how active the flipper is
 
 		tip = {
-			x = _x + sin(_dir) * _length,
-			y = _y + cos(_dir) * _length,
+			x = _x + sin(_rest) * _length,
+			y = _y + cos(_rest) * _length,
 		},
 	}
 	add(FLIPPERS, flipper)
@@ -262,10 +265,10 @@ function update_flipper(_flipper)
 	_flipper.prev_dir = _flipper.direction
 
 	local is_active = false
-	if _flipper.is_right then 
-		is_active = RIGHT_FLIPPER
-	else
+	if _flipper.is_left then 
 		is_active = LEFT_FLIPPER
+	else
+		is_active = RIGHT_FLIPPER
 	end
 	_flipper.is_active=is_active
 
@@ -284,8 +287,6 @@ function update_flipper(_flipper)
 end
 
 function update_ball(_ball)
-	add_force(_ball, 0, GRAVITY * deltaTime, false)
-
 	_ball.x += _ball.dirX * deltaTime
 	_ball.y += _ball.dirY * deltaTime
 
@@ -302,7 +303,7 @@ function update_ball(_ball)
 			local dirX, dirY, length = get_direction_of_vector(convert_points_to_vector(new_point(point[1],point[2]),_ball))
 			_ball.x, _ball.y = point[1] + dirX * BALL_RADIUS, point[2] + dirY * BALL_RADIUS
 
-			local friction = .8
+			local bounciness = .8
 			if flipper.active_perc%1!=0 and flipper.is_active then 
 					-- if flipper is moving forward
 
@@ -328,7 +329,7 @@ function update_ball(_ball)
 				-- debug(velocityX .. "," .. velocityY)
 
 
-				friction = .9
+				bounciness = .9
 
 				-- if it hits the edge of a flipper then send it on an angle
 				if point[3]==1 or point[3]==0 then 
@@ -349,7 +350,7 @@ function update_ball(_ball)
 				debug(5 * (1-_ball.additive_velocity))
 				]]--
 
-				add_force(_ball, velocityX * friction, velocityY * friction * 1.2, false)
+				add_force(_ball, velocityX * bounciness, velocityY * bounciness * 1.2, false)
 			else
 				local wall_direction=new_point(dirX, dirY)
 
@@ -359,10 +360,12 @@ function update_ball(_ball)
 				local dy = -wall_direction.y * 2 * dot
 
 					-- normal flipper either stationary or heading down
-				add_force(_ball, dx * friction, dy * friction, false)
+				add_force(_ball, dx * bounciness, dy * bounciness, false)
 			end
 		end
 	end
+
+	add_force(_ball, 0, GRAVITY * deltaTime, false)
 
 	_ball.dirX = mid(-BALL_MAX_VELOCITY, _ball.dirX, BALL_MAX_VELOCITY)
 	_ball.dirY = mid(-BALL_MAX_VELOCITY, _ball.dirY, BALL_MAX_VELOCITY)
@@ -386,13 +389,14 @@ function wall_col(_wall, _ball)
 
 		local wall_direction=new_point(dirX, dirY)
 
-		local dot = dot_product({x=_ball.dirX, y=_ball.dirY},wall_direction)
+		local bounciness = .6
 
-		local dx = -wall_direction.x * 2 * dot
-		local dy = -wall_direction.y * 2 * dot
+		local dot = dot_product({x=_ball.dirX, y=_ball.dirY},wall_direction) * (1+bounciness)
 
-		local friction = .8
+		local dx = -wall_direction.x * dot
+		local dy = -wall_direction.y * dot
 
+		--[[
 		-- an extra check to see if the ball is "skimming" the wall , in which case don't bounce it too much- I guess
 		local skim_check = dot_product({x=_ball.n_dirX, y=_ball.n_dirY},wall_direction)
 		if abs(skim_check)<.3 then 
@@ -400,8 +404,9 @@ function wall_col(_wall, _ball)
 			dx = dirX
 			dy = dirY
 
-			friction = .3
+			bounciness = .3
 		end
+		]]--
 
 		--[[
 		local dx = dirX
@@ -409,7 +414,7 @@ function wall_col(_wall, _ball)
 		]]--
 
 
-		add_force(_ball, dx * friction, dy * friction, false)
+		add_force(_ball, dx, dy, false)
 	end
 end
 

@@ -49,6 +49,15 @@ function _init()
 	NEW_POINT_PREVIEW = {}
 end
 
+function init_part(_datastr)
+	local data = split(_datastr)
+	local part_type = deli(data,1)
+
+	if part_type=="flipper" then 
+		new_flipper(data)
+	end
+end
+
 
 function init_polygon(poly_data)
 	local points={}
@@ -111,7 +120,6 @@ function _update60()
 	if(DEBUGTIME>0)DEBUGTIME-=1
 	if(DEBUGTIME==0)DEBUG=""
 
-	debug(#PARTS)
 
 	cursor_selection=nil
 	SELECTION_INFO = ""
@@ -119,14 +127,15 @@ function _update60()
 
 	
 	update_cursor()
-	update_cursor_ui()
 	update_keyboard()
+	update_cursor_ui()
 
 	update_camera()
 
 	if(current_mode=="polygon edit")update_mode_polygon()
 end
 
+alphabet = split"a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z,1,2,3,4,5,6,7,8,9,0,_"
 function update_keyboard()
 	local p = stat(30) and stat(31)
 
@@ -135,6 +144,50 @@ function update_keyboard()
 
 	keyboard_enter = false
 	if(p=="\r")keyboard_enter=true
+
+	
+	if is_typing then 
+
+		-- max length == 6 on part name things
+		if(type_pass == "part_name" and #type_temp>=6)goto continue
+
+		for letter in all(alphabet) do 
+			if tostr(p)==tostr(letter) then 
+				type_temp ..=letter
+			end
+		end
+
+		::continue::
+
+		if(p=="p")poke(0x5f30,1)
+
+		if #type_temp>0 and p=="\b" then 
+			type_temp = sub(type_temp,1,-2)
+
+			
+		end
+
+		if MOUSE_CLICK or MOUSE_RIGHT_CLICK or keyboard_enter then 
+			if(keyboard_enter)poke(0x5f30,1)
+			end_typing()
+		end
+	end
+end
+
+function end_typing()
+	is_typing = false
+
+	if type_pass == "part_name" then 
+		local name = type_temp
+		if(#name<=0)name = gen_name()
+		selected.name = sub(name,1,6)
+	end
+end	
+
+part_num=0
+function gen_name()
+	part_num+=1
+	return "part" .. sub("0"..part_num, -2)
 end
 
 function update_camera()
@@ -308,11 +361,13 @@ function _draw()
 		if cursor_mode==1 then
 			spr(1,_x,_y)
 		elseif cursor_mode==2 then 
-			if MOUSE_HOLD then 
+			if MOUSE_HOLD or MOUSE_RIGHT then 
 				sspr(10,8,10,10,_x - 2,_y)
 			else
 				sspr(0,8,10,10,_x - 2,_y)
 			end
+		elseif cursor_mode==3 then 
+			spr(6,_x-2,_y - 4)
 		end
 	end
 end
@@ -458,9 +513,11 @@ function update_ui_parts()
 		end
 	end
 
+	local unselected_on_frame = nil
 	local hover = mouse_hb(part_x, part_y, part_w + 2, part_h)
 	if selected and not hover then 
 		if MOUSE_CLICK or MOUSE_RIGHT_CLICK then 
+			unselected_on_frame=selected
 			new_selected()
 
 			-- allow you to drag straight away
@@ -499,30 +556,20 @@ function update_ui_parts()
 
 		if(part.hover)hover_part = part
 	end
+
+	-- debug(#PARTS)
+
 	-- click on object on map
 	if hover_part and not placable and MOUSE_CLICK and not placed_on_frame then 
-		new_selected(hover_part)
+		if unselected_on_frame and hover_part==unselected_on_frame then 
+			placable, selected = unselected_on_frame, placable
+			del(PARTS,placable)
+		else
+			new_selected(hover_part)
+		end	
 		-- del(PARTS, hover_part)
 	end
 	
-end
-
-function new_part_placable(_type)
-	show_selector = false
-	place_object = true
-
-	placable = {
-		x = MOUSE_X,
-		y = MOUSE_Y,
-
-		type = _type,
-		name = "prtnme",
-	}
-
-	if _type == "flipper" then 
-		placable.rest_direction = .82
-		placable.length = 20
-	end
 end
 
 function draw_mode_parts()
@@ -530,15 +577,15 @@ function draw_mode_parts()
 		foreach(_poly,draw_iPointLine)
 	end
 
-	foreach(PARTS, draw_placable)
+	foreach(PARTS, draw_part)
 
 	-- draw current placing object thing
 	if placable then 
-		draw_placable(placable)
+		draw_part(placable)
 	end
 end
 
-function draw_placable(_p)
+function draw_part(_p)
 	local sel = _p == placable or _p == selected 
 	
 	local rad = 3
@@ -548,7 +595,12 @@ function draw_placable(_p)
 	circ(_p.x, _p.y, rad, col)
 
 	if _p.type == "flipper" then 
-		local x2,y2 = _p.x + sin(_p.rest_direction) * _p.length, _p.y + cos(_p.rest_direction) * _p.length
+		local is_left,length,rest_direction,active_angle=unpack(_p.data)
+		
+		local x2,y2 = _p.x + sin(rest_direction + active_angle) * length, _p.y + cos(rest_direction + active_angle) * length
+		line(_p.x, _p.y, x2, y2, sel and 13 or 5)
+
+		local x2,y2 = _p.x + sin(rest_direction) * length, _p.y + cos(rest_direction) * length
 		line(_p.x, _p.y, x2, y2, col)
 	end
 end
@@ -599,12 +651,20 @@ function draw_ui_parts()
 end
 
 function mouse_hb(_x, _y, _w, _h)
+	if(is_typing)return false
+
 	return mouseX_raw > _x and mouseX_raw < _x + _w and mouseY_raw > _y and mouseY_raw < _y + _h
 end
 
+function new_typing(_pass)
+	is_typing = true
+	type_pass = _pass 
+	type_temp = ""
+end
+
+
 function new_selected(_part)
 	selected = _part or nil
-	part_mouse_controls = true
 
 	selinfo_index = 1
 	if _part then 
@@ -614,10 +674,46 @@ function new_selected(_part)
 	end
 end
 
+function new_part(_type)
+	show_selector = false
+	place_object = true
+
+	part = {
+		x = MOUSE_X,
+		y = MOUSE_Y,
+
+		type = _type,
+		name = gen_name(),
+
+		index = -1,
+		data = {},
+	}
+
+	if _type == "flipper" then 
+		part.index = 1
+		part.data = {true, 20, .8, -.12}
+	end
+end
+
+
 part_settings = {
-	split"lft,rst,frc", -- flipper
+	split"????",
+	split"side,lgth,rest,actv", 		-- flipper
 	split"pwr",
-	split"frc",
+}
+
+-- secondary list to the above , used for tooltips
+setting_descriptors = {
+	split"????",
+	split"left side flipper?,flipper length,resting angle,active angle change", 		-- flipper
+	split"pwr", 						-- pop bumper
+}
+
+-- secondary list to the above , used for tooltips
+setting_iterators = {
+	split"????",
+	split"bool,1,-.01,.02", 		-- flipper
+	split"pwr", 						-- pop bumper
 }
 function draw_part_editor(_part)
 	local colours = split"0,1,7,0,0"
@@ -629,42 +725,64 @@ function draw_part_editor(_part)
 	end
 
 	print("edit", _x + _w*.5 + tcentre("edit"), _y + 1, 6)
-	print('"' .. selected.name .. '"', _x + 1, _y+7, 7)
 
-	local _test = part_settings[1]
-	for i=1,#_test do 
+	local type_hover = mouse_hb(_x - CAMERA_X, _y+6 - CAMERA_Y, _w, 6)
+	if type_hover then 
+		cursor_mode = 3
+
+		if MOUSE_CLICK then
+			new_typing("part_name")
+		end
+	end
+	local name = is_typing and type_pass=="part_name" and type_temp or _part.name
+	local _text = '"' .. name .. '"'
+	print(_text, _x + _w*.5 + tcentre(_text), _y+7, 7)
+	
+
+	local part_index = _part.index==-1 and 1 or _part.index+1
+	local _test = part_settings[part_index]
+	for i=1,#_part.data do 
 		local _text, y = _test[i], _y+11+i*6
+		local data=_part.data[i]
 
-		local data = "11"
-		if _text == "lft" then 
-			data = ""
-
+		if type(data)=="boolean" then 
 			local x = _x + 27
 			rect(x, y, x + 4, y+4, 7)
 
-			if(true)spr(5, x, y)
+			if(data)spr(5, x, y)
+		else
+			local str = sub(data,-4)
+			print(str, _x+_w+tright(tostr(str))-1, y ,6)
 		end
-
-		print(_text, _x+5, y ,6)
-		print(data, _x+_w+tright(data), y ,7)
 
 		local hover = mouse_hb(_x - CAMERA_X, y - CAMERA_Y - 1, _w, 6)
-		if part_mouse_controls and hover then 
+		if hover then 
+			cursor_mode = 2
+
+			SELECTION_INFO = setting_descriptors[part_index][i]
+
 			-- clicking on the UI
-			if MOUSE_CLICK then 
-				debug("clicked !")
+			if MOUSE_CLICK or MOUSE_RIGHT_CLICK then 
+				if type(data)=="boolean" then 
+					_part.data[i] = not data
+
+					if(_part.type=="flipper")_part.data[3] = (_part.data[3]+.5)%1
+				else
+					local change = setting_iterators[part_index][i] * (MOUSE_CLICK and 1 or -1)
+					_part.data[i] = round(_part.data[i] + change,2)
+				end
 			end
 		end
-		if(part_mouse_controls and hover or not part_mouse_controls and i==selinfo_index)spr(4, _x-3, y-1)
 
-		local move_hover = mouse_hb(_x - CAMERA_X, _y + _h - 7 - CAMERA_Y, _w, 8)
-		print("<move>", _x+_w*.5+tcentre("<move>"), _y + _h - 5, move_hover and 7 or 6)
-		-- relocate the piece
-		if move_hover and MOUSE_CLICK then 
-			placable, selected = selected, placable
-			del(PARTS,placable)
-		end
+		print(_text, _x+1, y ,hover and 6 or 13)
+		
 	end
+end
+
+function round(num, numDecimalPlaces)
+    numDecimalPlaces = min(numDecimalPlaces or 0, 2)
+    local mult = 10^(numDecimalPlaces or 0)
+    return flr(num * mult + 0.5) / mult
 end
 
 function tcentre(_text)
@@ -804,10 +922,10 @@ end
 
 -- contains all the little info to convert a part into a string
 function part_to_string(_part)
-	local out = table_to_string({_part.type, _part.x, _part.y})
+	local out = table_to_string({_part.type, _part.name, _part.x, _part.y})
 
 	if _part.type == "flipper" then 
-		out..=","..table_to_string({_part.length, _part.rest_direction})
+		out..=","..table_to_string(_part.data)
 	end
 
 	return out
@@ -833,7 +951,7 @@ end
 function table_to_string(_table)
 	local out = ""
 	for item in all(_table) do 
-		out..=item ..","
+		out..=tostr(item) ..","
 	end
 	return sub(out,1,-2)
 end
@@ -842,14 +960,14 @@ end
 
 
 __gfx__
-00000000010000000000000000000000000000000000000000000000000000000000000088888888888888888888888800000000000000000000000000000000
-000000001710000000eeeeee00000000000070000777000000000000000000000000000088228888822222288888822800000000000000000000000000000000
-00700700177100000eeeeeee00000000000077000777000000000000000000000000000082822888828888288882282800000000000000000000000000000000
-0007700017771000eeeeeeee0000e000000077700777000000000000000000000000000082222828828888288228882800000000000000000000000000000000
-0007700017777100eeeeeeee000eee00000077000000000000000000000000000000000088228228822222288228882800000000000000000000000000000000
-0070070017711000eeeeeeee0000e000000070000000000000000000000000000000000088882288822882288882282800000000000000000000000000000000
-0000000001101000eeeeeeee00000000000000000000000000000000000000000000000088822888822882288888822800000000000000000000000000000000
-0000000000000000eeeeeeee00000000000000000000000000000000000000000000000088888888888888888888888800000000000000000000000000000000
+00000000010000000000000000000000000000000000000011111000000000000000000088888888888888888888888800000000000000000000000000000000
+000000001710000000eeeeee00000000000070000777000017771000000000000000000088228888822222288888822800000000000000000000000000000000
+00700700177100000eeeeeee00000000000077000777000011711000000000000000000082822888828888288882282800000000000000000000000000000000
+0007700017771000eeeeeeee0000e000000077700777000001710000000000000000000082222828828888288228882800000000000000000000000000000000
+0007700017777100eeeeeeee000eee00000077000000000001710000000000000000000088228228822222288228882800000000000000000000000000000000
+0070070017711000eeeeeeee0000e000000070000000000011711000000000000000000088882288822882288882282800000000000000000000000000000000
+0000000001101000eeeeeeee00000000000000000000000017771000000000000000000088822888822882288888822800000000000000000000000000000000
+0000000000000000eeeeeeee00000000000000000000000011111000000000000000000088888888888888888888888800000000000000000000000000000000
 00010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00171000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00171101000001010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
