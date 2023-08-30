@@ -3,16 +3,16 @@ version 41
 __lua__
 -- init
 
-GRAVITY =  .08
+GRAVITY =  .06
 DEBUG = ""
 DEBUGTIME = 90
 
 deltaTime = 1
 
 LEFT_FLIPPER,RIGHT_FLIPPER = false, false
-FLIPPER_SPEED = .3
+FLIPPER_SPEED = .4
 
-PHYSICS_SPEED = .9
+PHYSICS_SPEED = 1
 PHYSICS_STEPS = 8
 
 STOP_SIM = false
