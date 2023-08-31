@@ -44,15 +44,13 @@ function _init()
 	PARTS = {}
 	foreach(split(part_library,"\n"),init_part)
 
-	-- new_flipper(44, 116, 20, .82, -.12, false)
-	-- new_flipper(94, 116, 20, .18, .12, true)
 
-	-- new_flipper(137, 10, 20, .08, .1, true)
-
-	POINTS = {}
+	POINTS = {}	-- ? 
 
 
 	CAMERA_X, CAMERA_Y = 64,64
+
+	debug(#PARTS)
 end
 
 function init_part(_datastr)
@@ -60,7 +58,7 @@ function init_part(_datastr)
 	local part_type = deli(data,1)
 
 	if part_type=="flipper" then 
-		new_flipper(data)
+		add(PARTS,new_flipper(data))
 	end
 end
 
@@ -98,7 +96,7 @@ function new_flipper(_data) -- _length, _dir, _extendAmount, _is_right)
 			y = _y + cos(_rest) * _length,
 		},
 	}
-	add(FLIPPERS, flipper)
+	return add(FLIPPERS, flipper)
 end
 
 -- function that returns a pinball at table x/y
@@ -281,8 +279,7 @@ function update_flipper(_flipper)
 		-- update the fliper tip location
 		local direction = _flipper.rest_direction + lerp(0, _flipper.extend_amount, easeOutCubic(_flipper.active_perc))
 		_flipper.direction = direction
-		_flipper.tip.x = _flipper.x + sin(direction) * _flipper.length
-		_flipper.tip.y = _flipper.y + cos(direction) * _flipper.length
+		_flipper.tip.x, _flipper.tip.y= _flipper.x + sin(direction) * _flipper.length, _flipper.y + cos(direction) * _flipper.length
 	end
 end
 
