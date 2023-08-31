@@ -54,7 +54,7 @@ function init_part(_datastr)
 	local part_type = deli(data,1)
 
 	if part_type=="flipper" then 
-		new_flipper(data)
+		new_flipper(data) -- todo fix this
 	end
 end
 
@@ -631,7 +631,7 @@ function draw_ui_parts()
 				
 				-- clicked on button to make new object
 				if MOUSE_CLICK then 
-					new_part_placable(_text)
+					new_part(_text)
 				end
 			end
 
