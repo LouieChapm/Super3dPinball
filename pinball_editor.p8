@@ -41,6 +41,7 @@ function _init()
 	ACTIVE_POLY_INDEX, ACTIVE_POLY_OBJECT = 1, POLYGONS[1]
 
 	PARTS = {}
+	foreach(split(part_library, "\n"), init_part)
 	
 
 	CAMERA_X,CAMERA_Y=dget(0) or 0,dget(1) or 0
@@ -49,14 +50,6 @@ function _init()
 	NEW_POINT_PREVIEW = {}
 end
 
-function init_part(_datastr)
-	local data = split(_datastr)
-	local part_type = deli(data,1)
-
-	if part_type=="flipper" then 
-		new_flipper(data) -- todo fix this
-	end
-end
 
 
 function init_polygon(poly_data)
@@ -145,6 +138,10 @@ function update_keyboard()
 	keyboard_enter = false
 	if(p=="\r")keyboard_enter=true
 
+	keyboard_delete = false 
+	if(p=="\b")keyboard_delete=true 
+
+
 	
 	if is_typing then 
 
@@ -184,10 +181,19 @@ function end_typing()
 	end
 end	
 
-part_num=0
-function gen_name()
+function gen_name(_num)
+	part_num = _num or 0
+
 	part_num+=1
-	return "part" .. sub("0"..part_num, -2)
+	local name = "part" .. sub("0"..part_num, -2)
+
+	for part in all(PARTS) do
+		if part.name==name then 
+			return gen_name(part_num)
+		end
+	end
+
+	return name
 end
 
 function update_camera()
@@ -477,6 +483,8 @@ function draw_mode_polygon()
 	if NEW_POINT_PREVIEW!=nil then 
 		circ(NEW_POINT_PREVIEW.x, NEW_POINT_PREVIEW.y, 2, 7)
 	end
+
+	foreach(PARTS, draw_part)
 end
 
 function draw_ui_polygon()
@@ -496,7 +504,7 @@ end
 function goto_parts()
 	show_selector = false
 
-	part_option_texts=split"flipper,bumper,pop bumper,ramp"
+	part_option_texts=split"flipper,pop bumper,ramp"
 
 	placable,selected = nil,nil
 end
@@ -570,6 +578,11 @@ function update_ui_parts()
 		-- del(PARTS, hover_part)
 	end
 	
+	
+	if selected and keyboard_delete and not is_typing then 
+		del(PARTS, selected)
+		selected = nil
+	end
 end
 
 function draw_mode_parts()
@@ -591,10 +604,10 @@ function draw_part(_p)
 	local rad = 3
 	local col = sel and 7 or _p.hover and 6 or 13
 
-	circfill(_p.x, _p.y, rad, 0)
-	circ(_p.x, _p.y, rad, col)
-
 	if _p.type == "flipper" then 
+		circfill(_p.x, _p.y, rad, 0)
+		circ(_p.x, _p.y, rad, col)
+		
 		local is_left,length,rest_direction,active_angle=unpack(_p.data)
 		
 		local x2,y2 = _p.x + sin(rest_direction + active_angle) * length, _p.y + cos(rest_direction + active_angle) * length
@@ -602,6 +615,10 @@ function draw_part(_p)
 
 		local x2,y2 = _p.x + sin(rest_direction) * length, _p.y + cos(rest_direction) * length
 		line(_p.x, _p.y, x2, y2, col)
+	elseif _p.type == "pop bumper" then 
+		local rad = unpack(_p.data)
+
+		circ(_p.x, _p.y, rad, col)
 	end
 end
 
@@ -631,7 +648,7 @@ function draw_ui_parts()
 				
 				-- clicked on button to make new object
 				if MOUSE_CLICK then 
-					new_part(_text)
+					new_part(_text, true)
 				end
 			end
 
@@ -674,24 +691,69 @@ function new_selected(_part)
 	end
 end
 
-function new_part(_type)
+function init_part(_datastr)
+	local data = split(_datastr)
+
+	new_part(data, false)
+end
+
+
+
+function new_part(_data, _placable)
 	show_selector = false
-	place_object = true
+	place_object = _placable
 
-	part = {
-		x = MOUSE_X,
-		y = MOUSE_Y,
+	if (type(_data))=="string" then
+		-- new placable object type thing
 
-		type = _type,
-		name = gen_name(),
+		local _type = _data
 
-		index = -1,
-		data = {},
-	}
+		part = {
+			x = MOUSE_X,
+			y = MOUSE_Y,
 
-	if _type == "flipper" then 
-		part.index = 1
-		part.data = {true, 20, .8, -.12}
+			type = _type,
+			name = gen_name(),
+
+			index = -1,
+			data = {},
+		}
+
+		if _type == "flipper" then 
+			part.index = 1
+			part.data = {true, 20, .8, -.12}
+		elseif _type == "pop bumper" then 
+			part.index = 2
+			part.data = {8}
+		else 
+			debug(_type)
+		end
+
+		placable = part
+	else
+		-- todo holy shit is so cringe
+		local _type, _name, _x, _y, _info = deli(_data,1), deli(_data,1), deli(_data,1), deli(_data,1), _data
+		
+		part = {
+			x = _x,
+			y = _y,
+
+			type = _type,
+			name = _name,
+
+			index = -1,
+			data = _info,
+		}
+
+		if(_type == "flipper") part.index = 1
+		if(_type == "pop bumper") part.index = 2
+
+		-- todo bad solution no 
+		for i=1, #part.data do 
+			if(part.data[i]=="true" or part.data[i]=="false")part.data[i]= part.data[i]=="true"
+		end
+
+		add(PARTS, part)
 	end
 end
 
@@ -699,21 +761,21 @@ end
 part_settings = {
 	split"????",
 	split"side,lgth,rest,actv", 		-- flipper
-	split"pwr",
+	split"radi",
 }
 
 -- secondary list to the above , used for tooltips
 setting_descriptors = {
 	split"????",
 	split"left side flipper?,flipper length,resting angle,active angle change", 		-- flipper
-	split"pwr", 						-- pop bumper
+	split"bumper radius", 						-- pop bumper
 }
 
 -- secondary list to the above , used for tooltips
 setting_iterators = {
 	split"????",
 	split"bool,1,-.01,.02", 		-- flipper
-	split"pwr", 						-- pop bumper
+	split"1", 						-- pop bumper
 }
 function draw_part_editor(_part)
 	local colours = split"0,1,7,0,0"
@@ -924,9 +986,7 @@ end
 function part_to_string(_part)
 	local out = table_to_string({_part.type, _part.name, _part.x, _part.y})
 
-	if _part.type == "flipper" then 
-		out..=","..table_to_string(_part.data)
-	end
+	out..=","..table_to_string(_part.data)
 
 	return out
 end
