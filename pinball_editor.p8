@@ -17,7 +17,7 @@ drag_update_x, drag_update_y=0,0
 show_points = true
 
 current_mode_index = 1
-modes_names=split"polygon edit,place parts,spline editor"
+modes_names=split"polygon edit,place parts,spline edit"
 num_ui_modes = #modes_names
 modes_ui_x = 126 - num_ui_modes*9 		-- horizontal place to start drawing modes ui buttons
 
@@ -254,7 +254,7 @@ function update_cursor_ui()
 
 	if(current_mode=="polygon edit")update_ui_polygon()
 	if(current_mode=="place parts")update_ui_parts()
-	if(current_mode=="place parts")update_ui_splines()
+	if(current_mode=="spline edit")update_ui_splines()
 
 	if mouseY_raw < 8 then 
 		if mouseX_raw > modes_ui_x-2 then 
@@ -267,12 +267,16 @@ function update_cursor_ui()
 
 					-- change mode
 					if MOUSE_CLICK then 
+						can_drag = true
+
 						local mode_index = i+1
 						current_mode_index = mode_index
 						current_mode = modes_names[current_mode_index]
 
 						if mode_index==2 then 
 							goto_parts()
+						elseif mode_index == 3 then 
+							goto_splines()
 						end
 					end
 				end
@@ -342,6 +346,7 @@ function _draw()
 
 	if(current_mode=="polygon edit")draw_mode_polygon()
 	if(current_mode=="place parts")draw_mode_parts()
+	if(current_mode=="spline edit")draw_mode_spline()
 
 	do	-- top ui
 		rectfill(CAMERA_X, CAMERA_Y, CAMERA_X+128, CAMERA_Y+7, 8)
@@ -862,8 +867,125 @@ end
 
 ---------------------------------------------------- SPLINES
 
-function update_ui_splines()
+function goto_splines()
+	SPLINES = {}
+	add(SPLINES,new_spline(64,64,10,10,80,80,10,10))
+end
 
+function new_spline(x1,y1,ox1,oy1,x2,y2,ox2,oy2)
+	local spline = {}
+	
+	spline.x1, spline.y1 = x1,y1
+	spline.x2, spline.y2 = x2,y2
+
+	spline.ox1, spline.oy1 = ox1,oy1
+	spline.ox2, spline.oy2 = ox2,oy2
+
+	spline.hover = -1		-- -1 for none , index for active
+	spline.drag = -1
+
+	return spline
+end
+
+function update_ui_splines()
+	foreach(SPLINES,update_spline)
+end
+
+function draw_mode_spline()
+	foreach(SPLINES,draw_spline)
+end
+
+function update_spline(s)
+	local rad = 5
+
+	s.hover = -1
+	if(calc_dist2(s.x1, s.y1, MOUSE_X, MOUSE_Y)<rad)s.hover = 1 
+	if(calc_dist2(s.x2, s.y2, MOUSE_X, MOUSE_Y)<rad)s.hover = 4
+
+	if(calc_dist2(s.x1 + s.ox1, s.y1 + s.oy1, MOUSE_X, MOUSE_Y)<rad)s.hover = 2
+	if(calc_dist2(s.x2 + s.ox2, s.y2 + s.oy2, MOUSE_X, MOUSE_Y)<rad)s.hover = 3 
+
+	if MOUSE_CLICK and s.hover>0 or s.drag>0 then 
+		if(s.drag<0)s.drag = s.hover
+
+		local newX, newY = flr(MOUSE_X), flr(MOUSE_Y)
+
+		if(s.drag==1)s.x1,s.y1 = newX,newY
+		if(s.drag==4)s.x2,s.y2 = newX,newY
+
+		if(s.drag==2)s.ox1,s.oy1 = newX - s.x1,newY - s.y1
+		if(s.drag==3)s.ox2,s.oy2 = newX - s.x2,newY - s.y2
+	end
+
+	if not MOUSE_HOLD then 
+		s.drag = -1
+	end
+end
+
+function draw_spline(s)
+	local c1,c2 = 13, 5
+	local rad = 3
+
+	local hover_col = MOUSE_HOLD and 7 or 6
+
+	-- module things
+	line(s.x1, s.y1, s.x1 + s.ox1, s.y1 + s.oy1, 5)
+	line(s.x2, s.y2, s.x2 + s.ox2, s.y2 + s.oy2, 5)
+
+	msg = ""
+
+	local steps = 30
+	
+	local x1,x2,x3,x4 = s.x1, s.x1 + s.ox1, s.x2 + s.ox2, s.x2
+	local y1,y2,y3,y4 = s.y1, s.y1 + s.oy1, s.y2 + s.oy2, s.y2
+
+	local x1,y1=s.x1,s.y1
+	for i=0, steps do 
+		local t = i*(1/steps)
+
+		local x2,y2 = bezier(x1,x2,x3,x4, t),bezier(y1,y2,y3,y4, t)
+		line(x1,y1,x2,y2, 2)
+
+		x1,y1 = x2,y2
+	end
+	--[[
+	for i=0,1-(1/steps), 1/steps do	
+
+		local t = i
+		local x1 = bezier(x1,x2,x3,x4, t)
+		local y1 = bezier(y1,y2,y3,y4, t)
+
+		msg ..= x1 .."|"
+
+		local t = i + 1/steps
+		local x2 = bezier(x1,x2,x3,x4, t)
+		local y2 = bezier(y1,y2,y3,y4, t)
+		
+		line(x1,y1, x2, y2, 2)
+
+		msg ..= x2 .. " "
+	end
+	]]--
+
+	debug(msg)
+
+	local x1,x2,x3,x4 = s.x1, s.x1 + s.ox1, s.x2 + s.ox2, s.x2
+	local y1,y2,y3,y4 = s.y1, s.y1 + s.oy1, s.y2 + s.oy2, s.y2
+
+	local t = (time()*.25)%1
+	circ(bezier(x1,x2,x3,x4,t),bezier(y1,y2,y3,y4,t),2,7)
+
+	-- tolbar circles
+	circ(s.x1 + s.ox1, s.y1 + s.oy1, rad, s.hover==2 and hover_col or c2)
+	circ(s.x2 + s.ox2, s.y2 + s.oy2, rad, s.hover==3 and hover_col or c2)
+
+	-- origins
+	circ(s.x1,s.y1, rad+1, s.hover==1 and hover_col or c1)
+	circ(s.x2,s.y2, rad+1, s.hover==4 and hover_col or c1)
+end
+
+function bezier(p0,p1,p2,p3, t)
+	return (1-t)*((1-t)*((1-t)*p0+t*p1)+t*((1-t)*p1+t*p2)) + t*((1-t)*((1-t)*p1+t*p2)+t*((1-t)*p2+t*p3))
 end
 
 ---------------------------------------------------- ELSE
@@ -971,7 +1093,6 @@ end
 -->8
 -- data handing
 function export_data()
-
 	dset(0,CAMERA_X)
 	dset(1,CAMERA_Y)
 
