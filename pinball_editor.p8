@@ -48,6 +48,8 @@ function _init()
 	CURSOR_IN_UI = false
 
 	NEW_POINT_PREVIEW = {}
+
+	goto_splines()
 end
 
 
@@ -868,11 +870,30 @@ end
 ---------------------------------------------------- SPLINES
 
 function goto_splines()
+	current_mode="spline edit"
+	current_mode_index = 3
+
 	SPLINES = {}
-	add(SPLINES,new_spline(64,64,10,10,80,80,10,10))
+
+	local data = split("32,96,32,-32,72,96,-32,-32|72,96,32,-32,112,96,-32,-32","|")
+	for i=1,#data do
+		local x1,y1,ox1,oy1,x2,y2,ox2,oy2 = unpack(split(data[i]))
+		add(SPLINES,new_spline(x1,y1,ox1,oy1,x2,y2,ox2,oy2, i>1 and SPLINES[i-1]))
+	end
+
+	-- add(SPLINES,new_spline(32,96,32,-32,48,96,-32,-32))
+	
 end
 
-function new_spline(x1,y1,ox1,oy1,x2,y2,ox2,oy2)
+
+--[[
+
+	creates new spline object
+	-- x/y and ox/oy
+	-- x/y and the point origins , and ox/oy are the handle offsets
+
+]]
+function new_spline(x1,y1,ox1,oy1,x2,y2,ox2,oy2,previous)
 	local spline = {}
 	
 	spline.x1, spline.y1 = x1,y1
@@ -881,10 +902,76 @@ function new_spline(x1,y1,ox1,oy1,x2,y2,ox2,oy2)
 	spline.ox1, spline.oy1 = ox1,oy1
 	spline.ox2, spline.oy2 = ox2,oy2
 
-	spline.hover = -1		-- -1 for none , index for active
+	spline.hover = -1					-- -1 for none , index for active
 	spline.drag = -1
 
+	spline_get_length(spline,8) -- maybe ? used for normalising speed along spline
+
+	spline.dist_to_t = dist_to_t		-- distance to t value function
+
+	if previous then 					-- 
+		spline.prev = previous 
+		spline.prev.next = spline
+	end
+
 	return spline
+end
+
+--[[
+
+	converts a distance to a t value along the length of a spline
+	fairly inperformant , but there's definitely optimisations
+
+]]
+function dist_to_t(spline, dist)
+    if(dist < 0) return 0 -- negative distance just means 0
+
+    local LUT = spline.lengths
+
+    local n = #LUT -- sample count
+    local arc_length = LUT[n] -- total arc length
+
+    for i = 1, n do -- iterate through the list to find which segment our distance lies between
+        if dist >= LUT[i - 1] and dist < LUT[i] then
+			-- linearly interpolate between i and i+1 by the ratio of the distance within the segment
+            return (i - 1 + (dist - LUT[i - 1]) / (LUT[i] - LUT[i - 1])) / n
+        end
+    end
+
+    return 1 -- distance is greater than or equal to the length of the arc
+end
+
+
+--[[
+
+	WARNING : only approximate length
+
+	split the spline into (steps) num of segments
+	gives spline "s" a LUT of lengths
+
+	lengths is a LUT of the cumulative length of each segment totaling to length
+
+]]
+function spline_get_length(s, steps)
+	local length = 0
+	s.lengths = {[0]=0}								-- init table variables
+
+	local x1,x2,x3,x4 = s.x1, s.x1 + s.ox1, s.x2 + s.ox2, s.x2	-- there has to be a better way to do this ??
+	local y1,y2,y3,y4 = s.y1, s.y1 + s.oy1, s.y2 + s.oy2, s.y2
+
+	for i=0,steps do 												-- iterate through lerp
+		local t = i / steps
+
+		local x,y = bezier(x1,x2,x3,x4, t), bezier(y1,y2,y3,y4, t)
+		
+		-- ignore first point
+		if i > 0 then 
+			length += sqrt((x-old_x)^2+(y-old_y)^2)					-- calculate distance of segment
+			add(s.lengths,length)									-- add current length to lengths LUT
+		end
+
+		old_x,old_y = x,y
+	end
 end
 
 function update_ui_splines()
@@ -939,41 +1026,41 @@ function draw_spline(s)
 	local x1,x2,x3,x4 = s.x1, s.x1 + s.ox1, s.x2 + s.ox2, s.x2
 	local y1,y2,y3,y4 = s.y1, s.y1 + s.oy1, s.y2 + s.oy2, s.y2
 
-	local x1,y1=s.x1,s.y1
-	for i=0, steps do 
-		local t = i*(1/steps)
-
-		local x2,y2 = bezier(x1,x2,x3,x4, t),bezier(y1,y2,y3,y4, t)
-		line(x1,y1,x2,y2, 2)
-
-		x1,y1 = x2,y2
+	for i = 0, steps do
+		local t = i / steps
+	
+		local x = bezier(x1, x2, x3, x4, t)
+		local y = bezier(y1, y2, y3, y4, t)
+	
+		if i > 0 then
+			line(seg_x, seg_y, x, y, 2)
+		end
+	
+		seg_x, seg_y = x, y
 	end
+
+	-- draw line to connect the next spline
+	if s.next then 
+		line(s.x2, s.y2, s.next.x1, s.next.y1, 1)
+	end
+
 	--[[
-	for i=0,1-(1/steps), 1/steps do	
-
-		local t = i
-		local x1 = bezier(x1,x2,x3,x4, t)
-		local y1 = bezier(y1,y2,y3,y4, t)
-
-		msg ..= x1 .."|"
-
-		local t = i + 1/steps
-		local x2 = bezier(x1,x2,x3,x4, t)
-		local y2 = bezier(y1,y2,y3,y4, t)
-		
-		line(x1,y1, x2, y2, 2)
-
-		msg ..= x2 .. " "
+	for seg in all(s.lengths) do 
+		local t = s:dist_to_t(seg)
+		circ(bezier(x1,x2,x3,x4,t),bezier(y1,y2,y3,y4,t),1,14)
 	end
 	]]--
 
-	debug(msg)
+	do 
+		local factor = 10
 
-	local x1,x2,x3,x4 = s.x1, s.x1 + s.ox1, s.x2 + s.ox2, s.x2
-	local y1,y2,y3,y4 = s.y1, s.y1 + s.oy1, s.y2 + s.oy2, s.y2
-
+		-- dist to t
+		local t = s:dist_to_t((time() * factor)%s.lengths[#s.lengths])
+		circ(bezier(x1,x2,x3,x4,t),bezier(y1,y2,y3,y4,t),2,7)
+	end
+	
 	local t = (time()*.25)%1
-	circ(bezier(x1,x2,x3,x4,t),bezier(y1,y2,y3,y4,t),2,7)
+	circ(bezier(x1,x2,x3,x4,t),bezier(y1,y2,y3,y4,t),1,6)
 
 	-- tolbar circles
 	circ(s.x1 + s.ox1, s.y1 + s.oy1, rad, s.hover==2 and hover_col or c2)
@@ -987,6 +1074,21 @@ end
 function bezier(p0,p1,p2,p3, t)
 	return (1-t)*((1-t)*((1-t)*p0+t*p1)+t*((1-t)*p1+t*p2)) + t*((1-t)*((1-t)*p1+t*p2)+t*((1-t)*p2+t*p3))
 end
+
+---------------------------------------------------- LOOKUP TABLES
+
+function new_LUT(_table)
+	local LUT=_table
+
+	return LUT
+end
+
+function LUT_get(_lut, _value)
+	for value in all(_lut) do 
+		
+	end
+end
+
 
 ---------------------------------------------------- ELSE
 function draw_checkerboard(_col)
@@ -1085,8 +1187,8 @@ end
 -- debug
 
 function debug(_msg, _time)
-	DEBUG = tostr(_msg)
 	DEBUGTIME = _time or 90
+	DEBUG = tostr(_msg)
 end
 
 
