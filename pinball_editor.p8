@@ -1012,10 +1012,10 @@ function update_ball(_b)
 
 	_b.dist += _b.vel  	-- add velocity to ball 
 	if _b.dist > segment.lengths[#segment.lengths] then 
-		_b.dist -= segment.lengths[#segment.lengths]	-- reset position along segment
-		_b.segment = segment.next or SPLINES[1]			-- continue movement on next spline
+		_b.dist -= segment.lengths[#segment.lengths]		-- reset position along segment
+		_b.segment = segment.next or SPLINES[1]				-- continue movement on next spline
 	elseif _b.dist < 0 then 
-		_b.segment = segment.prev or SPLINES[#SPLINES]	-- continue movement on previous spline
+		_b.segment = segment.prev or SPLINES[#SPLINES]		-- continue movement on previous spline
 		_b.dist += _b.segment.lengths[#_b.segment.lengths]	-- reset position along segment
 	end
 
