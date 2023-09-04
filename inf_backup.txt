@@ -8,3 +8,4 @@ flipper,part06,135,10,false,20,0.07,0.12
 pop bumper,part03,96,-99,8
 pop bumper,part04,66,-84,8
 pop bumper,part05,95,-64,8]]
+spline_library=[[55,110,-24,-9,75,72,-20,-10|75,72,20,10,55,110,24,7]]

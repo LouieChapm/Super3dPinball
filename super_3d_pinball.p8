@@ -51,6 +51,10 @@ function _init()
 	CAMERA_X, CAMERA_Y = 64,64
 end
 
+function init_spline(_spline)
+
+end
+
 function init_part(_datastr)
 	local data = split(_datastr)
 	local _type, _name, _x, _y = deli(data,1),deli(data,1),deli(data,1),deli(data,1)
@@ -263,7 +267,7 @@ end
 -->8
 -- physics
 
-function dot_product(x1, y1, x2,y2)
+function dot_product(x1, y1, x2, y2)
 	return ( x1 * x2 ) + ( y1 * y2 )
 end
 

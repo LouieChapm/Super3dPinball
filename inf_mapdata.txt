@@ -1,20 +1,11 @@
-poly_library=[[20,80,-20,104,-32,144,-20,176,16,200,60,200,92,172,96,120,64,84]]
-part_library=[[pop bumper,part09,-24,125,8
-pop bumper,part10,-31,152,8
-pop bumper,part11,-20,176,8
-pop bumper,part12,0,190,8
-pop bumper,part13,23,200,8
-pop bumper,part14,47,199,8
-pop bumper,part08,69,190,8
-pop bumper,part06,95,145,9
-pop bumper,part07,91,170,8
-pop bumper,part05,90,113,8
-pop bumper,part04,71,91,8
-pop bumper,part03,44,81,8
-pop bumper,part02,16,82,8
-pop bumper,part01,-11,96,8
-pop bumper,part15,16,141,8
-pop bumper,part17,20,128,8
-pop bumper,part18,35,126,8
-pop bumper,part16,29,149,8
-pop bumper,part19,41,139,8]]
+poly_library=[[0,96,0,138,44,160,44,224,92,224,92,160,136,138,136,96,136,36,128,24,136,8,136,-64,132,-96,128,-112,116,-128,100,-140,84,-144,68,-146,48,-144,32,-136,20,-124,12,-112,4,-92,0,-64,0,-40,0,-32,4,-4,16,28,0,36
+12,104,12,58,16,58,16,102,44,116,44,120
+122,102,122,58,126,58,126,104,94,120,94,116
+12,-76,20,-100,32,-112,24,-88,24,-60,24,-40,32,4,24,-4,16,-20,12,-32,12,-52]]
+part_library=[[flipper,part02,94,117,false,20,0.2,0.12
+flipper,part01,44,117,true,20,0.8,-0.12
+flipper,part06,135,10,false,20,0.07,0.12
+pop bumper,part03,96,-99,8
+pop bumper,part04,66,-84,8
+pop bumper,part05,95,-64,8]]
+spline_library=[[48,112,-32,0,48,64,-32,0|48,64,32,0,48,112,33,0]]
