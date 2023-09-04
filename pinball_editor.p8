@@ -62,7 +62,9 @@ end
 function init_spline(spline_data)
 	local data = split(spline_data,"|")
 	for i=1,#data do
-		local x1,y1,ox1,oy1,x2,y2,ox2,oy2 = unpack(split(data[i]))
+		local points, lengths = unpack(split(data[i],":"))
+
+		local x1,y1,ox1,oy1,x2,y2,ox2,oy2 = unpack(split(points))
 		add(SPLINES,new_spline(x1,y1,ox1,oy1,x2,y2,ox2,oy2, i>1 and SPLINES[i-1]))
 	end
 end
@@ -961,8 +963,8 @@ function goto_splines()
 
 	-- test ball on spline
 	ball = {
-		dist 	= 0, 			-- distance along spline
-		vel 	= .1,			-- velocity
+		dist 	= 10, 			-- distance along spline
+		vel 	= 2,			-- velocity
 		segment	= SPLINES[2], 	-- current spline segment
 
 		x = 0, 
@@ -999,14 +1001,14 @@ function update_ball(_b)
 	local segment = _b.segment
 
 	if _b.prev_x + _b.prev_y != 0 then
-    local dx, dy = _b.x - _b.prev_x, _b.y - _b.prev_y   		-- find delta direction and normalize
-    local gravity_force = dot_product(dx, dy, 0, 1) / _b.vel 	-- get dot product to find direction relative to gravity
+		local dx, dy = _b.x - _b.prev_x, _b.y - _b.prev_y   		-- find delta direction and normalize
+		local gravity_force = dot_product(dx, dy, 0, 1) / _b.vel 	-- get dot product to find direction relative to gravity
 
-    -- Apply damping to slow down the ball
-    local damping = .99  		-- Adjust this value as needed
-    _b.vel += gravity_force
-    _b.vel *= damping
-end
+		-- apply damping to slow down the ball
+		local damping = .97  		-- adjust this value as needed
+		_b.vel += gravity_force		-- apply gravity force
+		_b.vel *= damping			-- apply damping -- tokens
+	end
 
 	_b.dist += _b.vel  	-- add velocity to ball 
 	if _b.dist > segment.lengths[#segment.lengths] then 
@@ -1443,7 +1445,7 @@ function export_data()
 									-- spline library
 	out..="\nspline_library=[["
 	for _spline in all(SPLINES) do 
-		out..= spline_to_string(_spline) .. "|"
+		out..= spline_to_string(_spline) .. ":" .. table_to_string(_spline.lengths) .. "|"
 	end
 	if(#SPLINES>0)out = sub(out,1,-2)
 	out..="]]"
