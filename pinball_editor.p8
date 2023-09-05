@@ -144,7 +144,10 @@ function _update()
 
 	cursor_selection=nil
 	SELECTION_INFO = ""
-	CURSORXYSTRING = "x:" .. (MOUSE_X - MOUSE_X%SNAP) .. " y:" .. (MOUSE_Y - MOUSE_Y%SNAP)
+
+	local mx,my = world_to_screen(MOUSE_X, MOUSE_Y)
+	CURSORXYSTRING = "x:" .. ((MOUSE_X - MOUSE_X%SNAP)) .. " y:" .. (MOUSE_Y - MOUSE_Y%SNAP)
+	if(not ZOOM_INACTIVE)CURSORXYSTRING = "zoom active"
 
 	
 	update_cursor()
@@ -236,27 +239,15 @@ function update_camera()
 		if MOUSE_WHEEL == -1 and ZOOM_T == 1 or  MOUSE_WHEEL== 1 and ZOOM_T == 0 then
 			ZOOM_CURRENT = true
 			ZOOM_RATE = zoom_speed * MOUSE_WHEEL
-
-			ZOOM_OX = CAMERA_X
-			ZOOM_OY = CAMERA_Y
-
-			if MOUSE_WHEEL == 1 then 
-				ZOOM_OX += scroll_amount
-				ZOOM_OY += scroll_amount
-			else 
-				
-			end
 		end
 	end
 
 	if ZOOM_CURRENT then 
 		ZOOM_T = mid(0, ZOOM_T + ZOOM_RATE, 1)
 
-		-- CAMERA_X = lerp(0, mouseX_raw, easeinoutquad(ZOOM_T))
-		-- CAMERA_Y = lerp(0, mouseY_raw, easeinoutquad(ZOOM_T))
-
-		CAMERA_X = lerp(ZOOM_OX-scroll_amount, ZOOM_OX, easeinoutquad(ZOOM_T))
-		CAMERA_Y = lerp(ZOOM_OY-scroll_amount, ZOOM_OY, easeinoutquad(ZOOM_T))
+		-- lerp the camera based on zoom ? unsure ?
+		-- CAMERA_X = lerp(-96, -64, easeinoutquad(ZOOM_T))
+		-- CAMERA_Y = lerp(-96, -64, easeinoutquad(ZOOM_T))
 
 		if ZOOM_T == 0 or ZOOM_T == 1 then 
 			ZOOM_CURRENT = false
@@ -1300,10 +1291,10 @@ end
 ---------------------------------------------------- CAMERA
 
 function world_to_screen(wx, wy)
-	local sx = wx * ZOOM_SCALE
-	local sy = wy * ZOOM_SCALE
+    local sx = (wx - 64) * ZOOM_SCALE + 64
+	local sy = (wy - 64) * ZOOM_SCALE + 64
 
-	return sx, sy
+    return sx, sy
 end
 
 
@@ -1325,20 +1316,37 @@ function draw_checkerboard(_col)
 	fillp(▒)
 	local width = 16 * ZOOM_SCALE
 	if ZOOM_T < .5 then 
-		width *= 2
+		width *= 4
 	end
-	for x=-2,128/width,1 do
-		for y=-2,128/width,1 do
-			local _x,_y = CAMERA_X + x*width - CAMERA_X%width, CAMERA_Y + y*width - CAMERA_Y%width
+
+	local origin_x, origin_y = CAMERA_X - CAMERA_X%width, CAMERA_Y - CAMERA_Y%width
+	local start,fin = -2, 128/width
+
+	if ZOOM_T < .5 then 
+		local CX = CAMERA_X * 2
+		local CY = CAMERA_Y * 2
+
+		origin_x, origin_y = CX - CX%width, CY - CY%width
+
+		start -=1 
+		fin += 2
+	end
+
+	for x=start,fin,1 do
+		for y=start,fin,1 do
+			local _x,_y = origin_x + x*width,origin_y + y*width
 			if (x+CAMERA_X\width+y+CAMERA_Y\width)%2==0 then 
-				rect(_x,_y,_x+width,_y+width,_col)
+
+				local sx,sy = world_to_screen(_x, _y)
+				rect(sx, sy, sx+width, sy+width,_col)
 			end
 		end
 	end
 	fillp()
 
-	circfill(0,0,2,0)
-	circ(0,0,2,_col)
+	local cx,cy = world_to_screen(0,0)
+	circfill(cx,cy,2,0)
+	circ(cx,cy,2,_col)
 end
 
 function draw_poly(_poly)
