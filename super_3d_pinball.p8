@@ -3,6 +3,8 @@ version 41
 __lua__
 -- init
 
+-- TODO ADD MORE COMMENTS
+
 GRAVITY =  .06
 DEBUG = ""
 DEBUGTIME = 90
@@ -36,7 +38,7 @@ function _init()
 
 
 	BALLS={}
-	for i=1,3 do
+	for i=1,1 do
 		new_ball(20 + i*5,120)
 	end
 	
@@ -192,8 +194,8 @@ function _update60()
 		end
 	end
 
-	local cam_lerp_speed = .01 --0.05 + lerp(0,.1,min(abs(ball.dirX)+abs(ball.dirY),5)/5) * PHYSICS_SPEED
-	local target_x, target_y = ball.x, ball.y -- mid(62, ball.x + ball.dirX, 76) , min(ball.y + ball.dirY * 8, 90)
+	local cam_lerp_speed = 0.05 + lerp(0,.1,min(abs(ball.dirX)+abs(ball.dirY),5)/5) * PHYSICS_SPEED
+	local target_x, target_y = mid(62, ball.x + ball.dirX, 76) , min(ball.y + ball.dirY * 8, 90)
 
 	CAMERA_X,CAMERA_Y = lerp(CAMERA_X, target_x, cam_lerp_speed), lerp(CAMERA_Y, target_y, cam_lerp_speed)	
 	camera(flr(CAMERA_X + cam_ox), flr(CAMERA_Y + cam_oy))
@@ -338,11 +340,9 @@ function col_bumper(part, point, ball)
 	if(#POINTS>5)deli(POINTS,5)
 	add(POINTS, new_point(newX, newY))
 
-	local force = 6 + rnd"2"
+	local force = 4 + rnd"2"
 
-	debug(tostr(dirX * force) .. ", " .. tostr(dirY * force))
-
-	add_force(ball, dirX * force, dirY * force, false)
+	add_force(ball, dirX * force, dirY * force, true)
 end
 
 
@@ -393,7 +393,7 @@ function col_flipper(flipper, point, ball)
 
 		add_force(ball, velocityX * bounciness, velocityY * bounciness * 1.2, false)
 	else
-		wall_col(flipper, point, ball)
+		col_wall(flipper, point, ball)
 	end
 end
 
@@ -404,14 +404,15 @@ function update_ball(_ball)
 	-- check collision with each line of edge
 	-- foreach(LINES, line_col)
 	for wall in all(WALLS) do 
-		-- wall_col(wall, _ball)
+		-- col_wall(wall, _ball)
 
 		local hit,point = line_collision(wall.x1, wall.y1, wall.x2, wall.y2, _ball, {wall.dirX, wall.dirY, wall.length})
 		if hit then	
-			wall_col(wall, point, _ball)
+			col_wall(wall, point, _ball)
 		end
 	end
 
+	-- iterate through LINE_COL list for collisions
 	for line in all(LINE_COL) do 
 		local hit,point = line_collision(line[1], line[2], line[3], line[4], _ball)
 		if hit then	
@@ -419,6 +420,7 @@ function update_ball(_ball)
 		end
 	end
 
+	-- iterate through CIRC_COL list for collisions
 	for circ in all(CIRC_COL) do 
 		local hit,point = circ_collision(circ[1], circ[2], circ[3], _ball)
 		if hit then	
@@ -426,22 +428,37 @@ function update_ball(_ball)
 		end
 	end
 
+	--[[
+	-- iterate through BOX_COL list for collisions
+	for box in all(BOX_COL) do 
+		local hit,point = box_collision(box[1], box[2], box[3], box[4] _ball)
+		if hit then	
+			box[5]:col(point, _ball)
+		end
+	end
+	]]
+
+					-- apply gravity force
 	add_force(_ball, 0, GRAVITY * deltaTime, false)
 
+					-- clamp ball speed to maximum velocity
 	_ball.dirX = mid(-BALL_MAX_VELOCITY, _ball.dirX, BALL_MAX_VELOCITY)
 	_ball.dirY = mid(-BALL_MAX_VELOCITY, _ball.dirY, BALL_MAX_VELOCITY)
 
+					-- find normal direction / speed
 	local dist=calc_dist2(_ball.x, _ball.y, _ball.x + _ball.dirX, _ball.y + _ball.dirY)
 	_ball.n_dirX, _ball.n_dirY = _ball.dirX / dist, _ball.dirY / dist -- normalised direction ?
 
+					-- update additive velocity
 	_ball.additive_velocity = abs(_ball.dirX) + abs(_ball.dirY)
-	-- debug(_ball.additive_velocity)
 
-	-- if(_ball.y>180)_ball.x, _ball.y, _ball.dirX, _ball.dirY = 92,112, 0, 0
+					-- todo remove this
+					-- move ball to flipper when it drains
+	if(_ball.y>180)_ball.x, _ball.y, _ball.dirX, _ball.dirY = 92,112, 0, 0
 end
 
 
-function wall_col(wall, point, ball)
+function col_wall(wall, point, ball)
 	local dirX, dirY, length = get_direction_of_vector(convert_points_to_vector(point[1],point[2], ball.x, ball.y))
 
 	ball.x, ball.y = point[1] + dirX * BALL_RADIUS, point[2] + dirY * BALL_RADIUS
@@ -455,7 +472,7 @@ function wall_col(wall, point, ball)
 
 	-- an extra check to see if the ball is "skimming" the wall , in which case don't bounce it too much- I guess
 	local skim_check = dot_product(ball.n_dirX, ball.n_dirY, dirX, dirY)
-	if abs(skim_check)<.3 then 
+	if abs(skim_check)<.3 or ball.additive_velocity<1 then 
 		debug(tostr(t) .. "\n" .. skim_check)
 		dx = dirX
 		dy = dirY
@@ -463,6 +480,7 @@ function wall_col(wall, point, ball)
 		bounciness = .3
 	end
 
+	if(ball.additive_velocity<1)debug(t)
 
 	add_force(ball, dx, dy, false)
 end

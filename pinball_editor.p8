@@ -17,7 +17,7 @@ drag_update_x, drag_update_y=0,0
 show_points = true
 
 current_mode_index = 1
-modes_names=split"polygon edit,place parts,spline edit"
+modes_names=split"polygon edit,place parts,spline edit,place sensors"
 num_ui_modes = #modes_names
 modes_ui_x = 126 - num_ui_modes*9 		-- horizontal place to start drawing modes ui buttons
 
@@ -147,7 +147,7 @@ function _update()
 
 	local mx,my = world_to_screen(MOUSE_X, MOUSE_Y)
 	CURSORXYSTRING = "x:" .. ((MOUSE_X - MOUSE_X%SNAP)) .. " y:" .. (MOUSE_Y - MOUSE_Y%SNAP)
-	if(not ZOOM_INACTIVE)CURSORXYSTRING = "zoom active"
+	if(not ZOOM_INACTIVE)CURSORXYSTRING = "zoom active"		-- hide the cursor coordinates when zoomed out bc I can't figure it out todo ?
 
 	
 	update_cursor()
@@ -325,6 +325,7 @@ function update_cursor_ui()
 	if(current_mode=="polygon edit")update_ui_polygon()
 	if(current_mode=="place parts")update_ui_parts()
 	if(current_mode=="spline edit")update_ui_splines()
+	if(current_mode=="place sensors")update_ui_sensors()
 
 	if mouseY_raw < 8 then 
 		if mouseX_raw > modes_ui_x-2 then 
@@ -347,6 +348,8 @@ function update_cursor_ui()
 							goto_parts()
 						elseif mode_index == 3 then 
 							goto_splines()
+						elseif mode_index == 4 then
+							goto_sensors()
 						end
 					end
 				end
@@ -388,6 +391,8 @@ function update_point(_point)
 
 		cursor_selection = _point
 		SELECTION_INFO = "move point"
+
+		cursor_mode = 2
 	end
 
 	if _point.hover and MOUSE_CLICK then 
@@ -417,6 +422,7 @@ function _draw()
 	if(current_mode=="polygon edit")draw_mode_polygon()
 	if(current_mode=="place parts")draw_mode_parts()
 	if(current_mode=="spline edit")draw_mode_spline()
+	if(current_mode=="place sensors")draw_mode_sensors()
 
 	do	-- top ui
 		rectfill(CAMERA_X, CAMERA_Y, CAMERA_X+128, CAMERA_Y+7, 8)
@@ -431,11 +437,17 @@ function _draw()
 
 	if(current_mode=="polygon edit")draw_ui_polygon()
 	if(current_mode=="place parts")draw_ui_parts()
+	-- splines
+	if(current_mode=="place sensors")draw_ui_sensors()
 
 	do -- bottom ui
 		rectfill(CAMERA_X, CAMERA_Y+121, CAMERA_X+128, CAMERA_Y+128, 8)
-		print(DEBUGTIME>0 and DEBUG or SELECTION_INFO, CAMERA_X+1, CAMERA_Y+122, 2)
-		print(CURSORXYSTRING, CAMERA_X+128 - #CURSORXYSTRING*4, CAMERA_Y+122, 2)
+
+		local debug_text = DEBUGTIME>0 and DEBUG or SELECTION_INFO
+		print(debug_text, CAMERA_X+1, CAMERA_Y+122, 2)
+
+		-- dont draw cursor xy if the debugtext is too long
+		if(#debug_text < 20)print(CURSORXYSTRING, CAMERA_X+128 - #CURSORXYSTRING*4, CAMERA_Y+122, 2)
 	end
 
 	do -- cursor
@@ -493,6 +505,8 @@ function update_mode_polygon()
 					NEW_POINT_PREVIEW.next = collided_obj.next
 
 					SELECTION_INFO = "split line"
+
+					cursor_mode = 2
 				end
 			end
 		end
@@ -565,6 +579,8 @@ function draw_mode_polygon()
 		circ(x, y, 2, 7)
 	end
 
+	foreach(SPLINES,draw_spline)
+
 	foreach(PARTS, draw_part)
 end
 
@@ -606,16 +622,16 @@ function update_ui_parts()
 	if(not ZOOM_INACTIVE)return
 
 
-	local hover = mouse_hb(part_x, part_y, part_w + 2, part_h)
+	-- check to see if the cursor is in UI
+	local hover = selected and mouse_hb(part_x, part_y, part_w + 2, part_h)
+
+	-- select new part assuming that it's not covered by the UI
 	if selected and not hover then 
-		if MOUSE_CLICK or MOUSE_RIGHT_CLICK then 
+		if MOUSE_CLICK or MOUSE_RIGHT_RELEASE and drag_update_x <1 and drag_update_y <1 then 
 			unselected_on_frame=selected
 			new_selected()
-
-			-- allow you to drag straight away
-			if MOUSE_RIGHT_CLICK then 
-				drag_next = t+1
-			end
+		elseif MOUSE_RIGHT_CLICK then 
+			start_drag()
 		end
 	end
 
@@ -641,15 +657,22 @@ function update_ui_parts()
 	-- click and pick up placed obbjects
 	local mx,my = MOUSE_X, MOUSE_Y
 	local hover_part = nil
+
 	for part in all(PARTS) do 
 		local dist = calc_dist2(part.x, part.y, MOUSE_X, MOUSE_Y)
 
-		part.hover = dist<10
+		-- don't swap objects if you're hovering over the UI
+		if not hover then 
+			part.hover = dist<10
 
-		if(part.hover)hover_part = part
+			if(part.hover)hover_part = part
+		else
+			part.hover = false
+		end
 	end
+	
 
-	-- debug(#PARTS)
+	if(hover_part)cursor_mode = 2
 
 	-- click on object on map
 	if hover_part and not placable and MOUSE_CLICK and not placed_on_frame then 
@@ -675,6 +698,8 @@ function draw_mode_parts()
 	for _poly in all(POLYGONS) do
 		foreach(_poly,draw_iPointLine)
 	end
+
+	foreach(SPLINES,draw_spline)
 
 	foreach(PARTS, draw_part)
 
@@ -713,9 +738,7 @@ end
 
 
 function draw_ui_parts()
-	if(show_selector)pal(14,2)
-	spr(2, CAMERA_X + 3, CAMERA_Y)
-	if(show_selector)pal(14,14)
+	spr(show_selector and 7 or 2, CAMERA_X + 3, CAMERA_Y)
 	rectfill(CAMERA_X + 6, CAMERA_Y + 1, CAMERA_X + 26, CAMERA_Y + 7, show_selector and 2 or 14)
 	print("parts", CAMERA_X + 6, CAMERA_Y + 2, 8)
 
@@ -772,7 +795,7 @@ function new_selected(_part)
 
 	selinfo_index = 1
 	if _part then 
-		can_drag = false
+		-- can_drag = false
 	else 
 		can_drag = true
 	end
@@ -860,10 +883,10 @@ setting_descriptors = {
 	split"bumper radius", 						-- pop bumper
 }
 
--- secondary list to the above , used for tooltips
+-- secondary list to the above , used for iterators
 setting_iterators = {
 	split"????",
-	split"bool,1,-.01,.02", 		-- flipper
+	split"bool,1,-.01,.01", 		-- flipper
 	split"1", 						-- pop bumper
 }
 function draw_part_editor(_part)
@@ -952,6 +975,7 @@ function goto_splines()
 
 	show_handles = true
 
+	--[[
 	-- test ball on spline
 	ball = {
 		dist 	= 10, 			-- distance along spline
@@ -964,6 +988,7 @@ function goto_splines()
 		prev_x = 0,
 		prev_y = 0,
 	}
+	]]--
 end
 
 
@@ -972,7 +997,7 @@ function update_ui_splines()
 
 	foreach(SPLINES,update_spline)
 
-	update_ball(ball)
+	-- update_ball(ball)
 	
 end
 
@@ -1135,17 +1160,15 @@ function spline_get_length(s, steps)
 end
 
 function draw_mode_spline()
-	--[[
 	for _poly in all(POLYGONS) do
 		foreach(_poly,draw_iPointLine)
 	end
 
 	foreach(PARTS, draw_part)
-	]]--
 
 	foreach(SPLINES,draw_spline)
 
-	draw_ball(ball)
+	-- draw_ball(ball)
 end
 
 function update_spline(s)
@@ -1159,6 +1182,8 @@ function update_spline(s)
 
 	if(calc_dist2(s.x1 + s.ox1, s.y1 + s.oy1, MOUSE_X, MOUSE_Y)<rad)s.hover = 2
 	if(calc_dist2(s.x2 + s.ox2, s.y2 + s.oy2, MOUSE_X, MOUSE_Y)<rad)s.hover = 3 
+
+	if(s.hover>0)cursor_mode = 2
 
 	if MOUSE_CLICK and s.hover>0 and show_handles or s.drag>0 then 
 		if(s.drag<0)s.drag = s.hover
@@ -1200,6 +1225,8 @@ function draw_spline(s)
 
 	local hover_col = MOUSE_HOLD and 7 or 6
 
+	if(current_mode!="spline edit")cLine, cPoint, cHandle = 2, 2, 2
+
 	
 
 
@@ -1211,7 +1238,7 @@ function draw_spline(s)
 	local x4,y4 = world_to_screen(s.x2, s.y2)
 
 	-- handle lines
-	if show_handles then 
+	if show_handles and current_mode=="spline edit" then 
 		line(x1, y1, x2, y2, cHandle)
 		line(x4, y4, x3, y3, cHandle)
 	end
@@ -1258,7 +1285,7 @@ function draw_spline(s)
 	end
 	]]--
 
-	if show_handles then 
+	if show_handles and current_mode=="spline edit"  then 
 		-- tolbar circles
 		circ(x2, y2, rad, s.hover==2 and hover_col or cPoint)
 		circ(x3, y3, rad, s.hover==3 and hover_col or cPoint)
@@ -1271,6 +1298,84 @@ end
 
 function bezier(p0,p1,p2,p3, t)
 	return (1-t)*((1-t)*((1-t)*p0+t*p1)+t*((1-t)*p1+t*p2)) + t*((1-t)*((1-t)*p1+t*p2)+t*((1-t)*p2+t*p3))
+end
+
+---------------------------------------------------- SENSORS
+
+function goto_sensors()
+	current_mode="place sensors"
+	current_mode_index = 4
+
+	-- display 
+	show_selector = false
+
+	sensor_ui_options=split"box sensor,impact switch,rollover switch"
+
+	--[[
+	placable,selected = nil,nil
+	]]--
+end
+
+
+function update_ui_sensors()
+	if mouseY_raw < 8 then 							-- if cursor in top UI
+		if mouseX_raw >= 1 and mouseX_raw < 35 then 	-- if cursor is hovering over the sensor button
+			show_selector = true						-- highlight selector
+		end
+	end
+end
+
+function draw_mode_sensors()
+	for _poly in all(POLYGONS) do
+		foreach(_poly,draw_iPointLine)
+	end
+
+	foreach(SPLINES,draw_spline)
+
+	foreach(PARTS, draw_part)
+end
+
+function draw_ui_sensors()
+	do		-- draw folder ui
+		spr(show_selector and 7 or 2, CAMERA_X + 3, CAMERA_Y)
+		rectfill(CAMERA_X + 6, CAMERA_Y + 1, CAMERA_X + 34, CAMERA_Y + 7, show_selector and 2 or 14)
+		print("sensors", CAMERA_X + 6, CAMERA_Y + 2, 8)
+	end
+
+	if show_selector then 					-- if UI element is visible
+		local found = false					-- to check where cursor is hovering over ANY elements
+
+		for i=1,#sensor_ui_options do 				-- for each text in table of UI text
+			local _text = sensor_ui_options[i]		-- grab text
+
+			local _x,_y,_w,_h = 3, 9 + (i-1)*7,#_text*4, 6
+
+			-- the max line is some arbitrary minumum width to make it a bit nicer
+			local hover = mouse_hb(3, 7 + (i-1)*7,max(60, #_text*4), 8)
+			if hover then 
+				found = true							-- indicate that we've found at least one element
+				SELECTION_INFO = "create " .. _text		-- set UI text to indicate selected object
+														-- we could probably stop looping here , but tokens > performance xD
+						
+				if MOUSE_CLICK then 		-- clicked on button to make new object
+					debug("found " .. _text)
+				end
+			end
+
+											-- draw the text , and change the colours if it's highlighted
+			local _x,_y,_w,_h = CAMERA_X + 3, CAMERA_Y + 8 + (i-1)*7,#_text*4, 6
+			rectfill(_x,_y,_x+_w,_y+_h,hover and 7 or 14)
+			print(_text, _x + 1, _y + 1, hover and 14 or 7)
+
+		end
+
+												-- hide UI if no object was found
+		if not (CURSOR_IN_UI and MOUSE_X < 64) and not found then 
+			show_selector = false				
+		else
+			if(mouseY_raw>8)cursor_mode=2		-- change cursor sprite
+		end
+	end
 end
 
 ---------------------------------------------------- LOOKUP TABLES
@@ -1506,14 +1611,14 @@ end
 
 
 __gfx__
-00000000010000000000000000000000000000000000000011111000000000000000000088888888888888888888888800000000000000000000000000000000
-000000001710000000eeeeee00000000000070000777000017771000000000000000000088228888822222288888822800000000000000000000000000000000
-00700700177100000eeeeeee00000000000077000777000011711000000000000000000082822888828888288888822800000000000000000000000000000000
-0007700017771000eeeeeeee0000e000000077700777000001710000000000000000000082222828828888288888888800000000000000000000000000000000
-0007700017777100eeeeeeee000eee00000077000000000001710000000000000000000088228228822222288888828800000000000000000000000000000000
-0070070017711000eeeeeeee0000e000000070000000000011711000000000000000000088882288822882288228288800000000000000000000000000000000
-0000000001101000eeeeeeee00000000000000000000000017771000000000000000000088822888822882288228888800000000000000000000000000000000
-0000000000000000eeeeeeee00000000000000000000000011111000000000000000000088888888888888888888888800000000000000000000000000000000
+00000000010000000000000000000000000000000000000011111000000000000000000088888888888888888888888888888888000000000000000000000000
+000000001710000000eeeeee00000000000070000777000017771000002222220000000088228888822222288888822882222228000000000000000000000000
+00700700177100000eeeeeee00000000000077000777000011711000022222220000000082822888828888288888822882282828000000000000000000000000
+0007700017771000eeeeeeee0000e000000077700777000001710000222222220000000082222828828888288888888882828228000000000000000000000000
+0007700017777100eeeeeeee000eee00000077000000000001710000222222220000000088228228822222288888828882282828000000000000000000000000
+0070070017711000eeeeeeee0000e000000070000000000011711000222222220000000088882288822882288228288882828228000000000000000000000000
+0000000001101000eeeeeeee00000000000000000000000017771000222222220000000088822888822882288228888882222228000000000000000000000000
+0000000000000000eeeeeeee00000000000000000000000011111000222222220000000088888888888888888888888888888888000000000000000000000000
 00010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00171000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00171101000001010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
