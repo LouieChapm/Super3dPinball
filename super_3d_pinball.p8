@@ -23,7 +23,7 @@ BALL_RADIUS = 5
 
 BALL_MAX_VELOCITY = 7
 
-#include inf_mapdata.txt
+#include inf_mapdata.txt  
 
 function debug(_text, _time)
 	DEBUG = tostr(_text)

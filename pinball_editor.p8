@@ -8,8 +8,6 @@ DEBUGTIME = 0
 SELECTION_INFO = "none"
 CURSORXYSTRING = ""
 
-cursor_selection = nil
-
 -- drag_next starts a drag on the next avaiable frame
 can_drag, drag_next = true, -1
 drag_update_x, drag_update_y=0,0
@@ -46,6 +44,9 @@ function _init()
 	PARTS = {}
 	foreach(split(part_library, "\n"), init_part)
 
+	SENSORS = {}
+	-- load data in eventually
+
 
 	SPLINES = {}
 	foreach(split(spline_library, "\n"), init_spline)
@@ -56,7 +57,12 @@ function _init()
 
 	NEW_POINT_PREVIEW = {}
 
-	goto_splines()
+	-- goto_splines()
+	-- debug(dget(2))
+	
+	local goto_target = dget(2)
+	if(goto_target==0)goto_target = 1
+	goto_goto(goto_target)
 end
 
 function init_spline(spline_data)
@@ -235,7 +241,10 @@ function update_camera()
 	-- zoom
 	MOUSE_WHEEL = stat(36)
 	
+	-- if do mouse wheel zoom thing
 	if MOUSE_WHEEL!=0 and ZOOM_T%1==0 then
+		deselect_everything()
+
 		if MOUSE_WHEEL == -1 and ZOOM_T == 1 or  MOUSE_WHEEL== 1 and ZOOM_T == 0 then
 			ZOOM_CURRENT = true
 			ZOOM_RATE = zoom_speed * MOUSE_WHEEL
@@ -300,6 +309,12 @@ function update_cursor()
 
 	if CAMERA_DRAGGING and can_drag then 
 		drag_update_x, drag_update_y = drag_origin_x - mouseX_raw, drag_origin_y - mouseY_raw
+
+
+		if not mouse_has_dragged and abs(drag_update_x)>3 or abs(drag_update_y)>3 then 
+			mouse_has_dragged = true
+		end
+
 	end
 
 	if CAMERA_DRAGGING and not MOUSE_RIGHT then 
@@ -312,6 +327,8 @@ function start_drag()
 
 	cam_origin_x, cam_origin_y = CAMERA_X, CAMERA_Y 
 	drag_origin_x,drag_origin_y = mouseX_raw, mouseY_raw
+
+	mouse_has_dragged = false		-- a little checker for RIGHT_UP checks to see whether a drag has occuered
 end
 
 function end_drag()
@@ -340,22 +357,64 @@ function update_cursor_ui()
 					if MOUSE_CLICK then 
 						can_drag = true
 
-						local mode_index = i+1
-						current_mode_index = mode_index
-						current_mode = modes_names[current_mode_index]
-
-						if mode_index==2 then 
-							goto_parts()
-						elseif mode_index == 3 then 
-							goto_splines()
-						elseif mode_index == 4 then
-							goto_sensors()
-						end
+						goto_goto(i+1)		-- generic goto mode func
 					end
 				end
 			end
 		end
 	end
+end
+
+--[[
+
+	parent "goto" function , allows you to call "goto" from _init()
+
+]]
+function goto_goto(_index)
+	deselect_everything()
+
+	current_mode_index = _index
+	current_mode = modes_names[current_mode_index]
+
+	dset(2, current_mode_index)	-- set current goto goto to memory
+
+	if _index==1 then 
+		goto_polygon()
+	elseif _index==2 then 
+		goto_parts()
+	elseif _index == 3 then 
+		goto_splines()
+	elseif _index == 4 then
+		goto_sensors()
+	end
+end
+
+--[[
+
+	literally does just that , 
+	resets everything . Called on mode changes , as well as zooming in/out
+	makes no current selected or placable objects
+	and makes sure nothing is hovering on
+
+]]
+function deselect_everything()
+	for poly in all(POLYGONS) do 
+		for point in all(poly) do 
+			point.hover = false
+			point.is_dragging = false		-- no dragging >:(
+		end
+	end
+
+	for _part in all(PARTS) do 
+		_part.hover = false
+	end
+
+	for _sensor in all(SENSORS) do 
+		_sensor.hover = false
+	end
+
+	placable, selected = nil, nil 			-- deselect current object
+	cursor_selection = nil					-- for polygon editor
 end
 
 function delete_polygon(_index)
@@ -379,7 +438,7 @@ function create_polygon(_x, _y, _shape)
 	init_polygon(_shape)
 end
 
-SNAP = 4
+SNAP = 1
 function update_point(_point)
 	_point.hover = false
 	_point.line_hover = false
@@ -468,7 +527,15 @@ end
 
 
 ---------------------------------------------------- POLYGON EDIT
+
+function goto_polygon()
+	cursor_selection = nil
+end
+
 function update_mode_polygon()
+
+	debug(cursor_selection)
+
 	-- if(keyboard_tab)show_points = not show_points
 	if keyboard_tab then 
 		ACTIVE_POLY_INDEX = (ACTIVE_POLY_INDEX%#POLYGONS)+1
@@ -512,7 +579,7 @@ function update_mode_polygon()
 		end
 
 		-- delete selection on right click
-		if cursor_selection and MOUSE_RIGHT_RELEASE and abs(drag_update_x)<=2 and abs(drag_update_y)<=2 then 
+		if cursor_selection and MOUSE_RIGHT_RELEASE and not mouse_has_dragged then 
 			cursor_selection.prev.next = cursor_selection.next 
 			cursor_selection.next.prev = cursor_selection.prev
 			
@@ -608,15 +675,16 @@ end
 
 part_x,part_y,part_w,part_h=80,30,32,60
 function update_ui_parts()
-	if mouseY_raw < 8 then 
-		if mouseX_raw >= 1 and mouseX_raw < 28 then 
 
-			-- kill placable
-			placable = nil
+	if(not ZOOM_INACTIVE) show_selector=false goto disable_button		-- don't let the user use the button if zoomed
+	if mouseY_raw < 8 and mouseX_raw >= 1 and mouseX_raw < 28 then 		-- hovering over button
 
-			show_selector = true
-		end
+		-- kill placable
+		placable = nil
+
+		show_selector = true											-- show selection ui
 	end
+	::disable_button::
 
 	local unselected_on_frame = nil
 	if(not ZOOM_INACTIVE)return
@@ -627,7 +695,7 @@ function update_ui_parts()
 
 	-- select new part assuming that it's not covered by the UI
 	if selected and not hover then 
-		if MOUSE_CLICK or MOUSE_RIGHT_RELEASE and drag_update_x <1 and drag_update_y <1 then 
+		if MOUSE_CLICK or MOUSE_RIGHT_RELEASE and not mouse_has_dragged then 
 			unselected_on_frame=selected
 			new_selected()
 		elseif MOUSE_RIGHT_CLICK then 
@@ -649,7 +717,7 @@ function update_ui_parts()
 			placable = nil
 			placed_on_frame=true
 
-		elseif MOUSE_RIGHT_RELEASE and drag_update_x <1 and drag_update_y <1 then
+		elseif MOUSE_RIGHT_RELEASE and not mouse_has_dragged then
 			placable = nil
 		end
 	end
@@ -715,7 +783,10 @@ function draw_part(_p)
 	local rad = 3
 	local col = sel and 7 or ZOOM_INACTIVE and _p.hover and 6 or current_mode=="place parts" and 13 or 5
 
-	local sx,sy = world_to_screen(_p.x, _p.y)
+	local _x, _y = _p.x, _p.y 
+	if(_p == placable)_x, _y = mouseX_raw + CAMERA_X, mouseY_raw + CAMERA_Y
+	
+	local sx,sy = world_to_screen(_x, _y)
 
 	if _p.type == "flipper" then 
 		circfill(sx, sy, rad, 0)
@@ -723,10 +794,10 @@ function draw_part(_p)
 		
 		local is_left,length,rest_direction,active_angle=unpack(_p.data)
 		
-		local x2,y2 = world_to_screen(_p.x + sin(rest_direction + active_angle) * length, _p.y + cos(rest_direction + active_angle) * length)
+		local x2,y2 = world_to_screen(_x + sin(rest_direction + active_angle) * length, _y + cos(rest_direction + active_angle) * length)
 		line(sx, sy, x2, y2, sel and 13 or 5)
 
-		local x2,y2 = world_to_screen(_p.x + sin(rest_direction) * length, _p.y + cos(rest_direction) * length)
+		local x2,y2 = world_to_screen(_x + sin(rest_direction) * length, _y + cos(rest_direction) * length)
 		line(sx, sy, x2, y2, col)
 	elseif _p.type == "pop bumper" then 
 		local rad = unpack(_p.data)
@@ -815,6 +886,10 @@ function new_part(_data, _placable)
 	show_selector = false
 	place_object = _placable
 
+	-- type will be a string of the name of a new "blank" object
+		-- i.e "pop bumper"
+	-- if it's on init _data will be a table
+		-- i.e {true, 6, 0.2, 0.10}
 	if (type(_data))=="string" then
 		-- new placable object type thing
 
@@ -873,14 +948,16 @@ end
 part_settings = {
 	split"????",
 	split"side,lgth,rest,actv", 		-- flipper
-	split"radi",
+	split"radi",						-- pop bumper
+	split"widt,hght", 				-- box sensor
 }
 
 -- secondary list to the above , used for tooltips
 setting_descriptors = {
 	split"????",
 	split"left side flipper?,flipper length,resting angle,active angle change", 		-- flipper
-	split"bumper radius", 						-- pop bumper
+	split"bumper radius", 																-- pop bumper
+	split"sensor width,sensor height", 				-- box sensor
 }
 
 -- secondary list to the above , used for iterators
@@ -888,6 +965,7 @@ setting_iterators = {
 	split"????",
 	split"bool,1,-.01,.01", 		-- flipper
 	split"1", 						-- pop bumper
+	split"1,1", 				-- box sensor
 }
 function draw_part_editor(_part)
 	local colours = split"0,1,7,0,0"
@@ -1311,16 +1389,31 @@ function goto_sensors()
 
 	sensor_ui_options=split"box sensor,impact switch,rollover switch"
 
-	--[[
-	placable,selected = nil,nil
-	]]--
+	placable = nil
 end
 
 
 function update_ui_sensors()
-	if mouseY_raw < 8 then 							-- if cursor in top UI
-		if mouseX_raw >= 1 and mouseX_raw < 35 then 	-- if cursor is hovering over the sensor button
-			show_selector = true						-- highlight selector
+	if(not ZOOM_INACTIVE) show_selector=false goto disable_button							-- don't let the user use the button if zoomed
+	if mouseY_raw < 8 and mouseX_raw >= 1 and mouseX_raw < 28 then  	-- if cursor is hovering over the sensor button
+			show_selector = true										-- highlight selector
+	end
+	::disable_button::
+
+	if placable then 
+		placable.x = MOUSE_X		-- get placable to follow cursor
+		placable.y = MOUSE_Y
+
+		if MOUSE_CLICK then 
+			add(SENSORS, placable)
+
+			selected, placable = placable, nil
+		end
+	end
+
+	if selected then 
+		if MOUSE_RIGHT_RELEASE and not mouse_has_dragged then 
+			selected = nil
 		end
 	end
 end
@@ -1331,8 +1424,14 @@ function draw_mode_sensors()
 	end
 
 	foreach(SPLINES,draw_spline)
-
 	foreach(PARTS, draw_part)
+
+
+
+	foreach(SENSORS, draw_sensor)
+
+	-- draw currently placable sensor
+	if(placable)draw_sensor(placable)
 end
 
 function draw_ui_sensors()
@@ -1358,7 +1457,7 @@ function draw_ui_sensors()
 														-- we could probably stop looping here , but tokens > performance xD
 						
 				if MOUSE_CLICK then 		-- clicked on button to make new object
-					debug("found " .. _text)
+					new_sensor(_text)
 				end
 			end
 
@@ -1375,6 +1474,52 @@ function draw_ui_sensors()
 		else
 			if(mouseY_raw>8)cursor_mode=2		-- change cursor sprite
 		end
+	end
+
+	if(selected)draw_part_editor(selected)		-- draw the object properties panel
+end
+
+function new_sensor(_data)
+
+	if type(_data)=="string" then	
+		-- creating a new blank object
+		
+		local sensor = {
+			x = MOUSE_X,			-- x/y position
+			y = MOUSE_Y,			
+
+			type = _data,			-- object type ( e.g "box sensor" )
+			name = gen_name(),		-- object name
+
+			index = -1,				-- used for tooltips
+			data = {},				-- object data ( what is editable with tooltips )
+		}
+
+		-- init object type data
+		if(_data=="box sensor")sensor.data, sensor.index = {5, 5}, 3		-- { width , height }
+
+		placable = sensor			-- set new table to current placable object
+	else
+		-- creating sensor with premade data
+
+	end
+
+end
+
+function draw_sensor(_sensor)
+	-- convert world to screen position
+	local _x, _y = _sensor.x, _sensor.y
+	if(_sensor == placable)_x, _y = mouseX_raw + CAMERA_X, mouseY_raw + CAMERA_Y
+	local sx,sy = world_to_screen(_x, _y)
+
+	local col = 6
+
+	if _sensor.type == "box sensor" then 
+		local data = _sensor.data
+
+		rect(sx - data[1], sy-data[2], sx + data[1], sy + data[2], col)
+	else 
+		circ(sx, sy, 6, col)
 	end
 end
 
