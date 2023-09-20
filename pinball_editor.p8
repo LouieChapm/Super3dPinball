@@ -230,6 +230,12 @@ function gen_name(_num)
 		end
 	end
 
+	for sensor in all(SENSORS) do
+		if sensor.name==name then 
+			return gen_name(part_num)
+		end
+	end
+
 	return name
 end
 
@@ -648,6 +654,7 @@ function draw_mode_polygon()
 
 	foreach(SPLINES,draw_spline)
 
+	foreach(SENSORS, draw_sensor)
 	foreach(PARTS, draw_part)
 end
 
@@ -769,6 +776,7 @@ function draw_mode_parts()
 
 	foreach(SPLINES,draw_spline)
 
+	foreach(SENSORS, draw_sensor)
 	foreach(PARTS, draw_part)
 
 	-- draw current placing object thing
@@ -967,10 +975,12 @@ setting_iterators = {
 	split"1", 						-- pop bumper
 	split"1,1", 				-- box sensor
 }
+
+pedit_w,pedit_h = 32,60
 function draw_part_editor(_part)
 	local colours = split"0,1,7,0,0"
 	local _x,_y = CAMERA_X + 80, CAMERA_Y + 30
-	local _w,_h = 32, 60
+	local _w,_h = pedit_w,pedit_h
 
 	for i=4,0,-1 do 
 		rectfill(_x-i,_y-i,_x+_w+i,_y+_h+i,colours[i+1])
@@ -1242,6 +1252,7 @@ function draw_mode_spline()
 		foreach(_poly,draw_iPointLine)
 	end
 
+	foreach(SENSORS, draw_sensor)
 	foreach(PARTS, draw_part)
 
 	foreach(SPLINES,draw_spline)
@@ -1394,27 +1405,69 @@ end
 
 
 function update_ui_sensors()
-	if(not ZOOM_INACTIVE) show_selector=false goto disable_button							-- don't let the user use the button if zoomed
+	local hover_pedit = mouse_hb(80, 30, pedit_w, pedit_h)
+
+
+	if(not ZOOM_INACTIVE) show_selector=false goto disable_button		-- don't let the user use the button if zoomed
 	if mouseY_raw < 8 and mouseX_raw >= 1 and mouseX_raw < 28 then  	-- if cursor is hovering over the sensor button
 			show_selector = true										-- highlight selector
 	end
 	::disable_button::
 
+	local sensor_hover,hover_dist = nil,9999							-- init values bc you can only hover one item
+	for sensor in all(SENSORS) do 
+		sensor.hover = false											-- set hover to false on everything
+
+		if(hover_pedit or placable)goto skip_hover
+		local dist = calc_dist2(sensor.x, sensor.y, MOUSE_X, MOUSE_Y)	-- find distance between sensor and cursor
+		if dist<10 and dist<hover_dist then 
+			sensor_hover,hover_dist = sensor,dist						-- only update if it's closer than the current
+		end
+		::skip_hover::
+	end
+
+	if sensor_hover then 
+		sensor_hover.hover = true
+
+		if MOUSE_CLICK then 
+
+			if sensor_hover==selected then		-- move part
+				del(SENSORS,selected)
+				selected, placable = nil, selected
+
+			else 								-- set selected to current part
+				selected = sensor_hover
+			end
+
+			MOUSE_CLICK = false						-- consume the click event
+		end
+	end
+
 	if placable then 
 		placable.x = MOUSE_X		-- get placable to follow cursor
 		placable.y = MOUSE_Y
 
-		if MOUSE_CLICK then 
+		if MOUSE_CLICK then 						-- place sensor on board
 			add(SENSORS, placable)
 
 			selected, placable = placable, nil
+
+			MOUSE_CLICK = false						-- consume the mouse_click event
 		end
 	end
 
-	if selected then 
+	if selected then 	
+		local deselect = false
+		
 		if MOUSE_RIGHT_RELEASE and not mouse_has_dragged then 
-			selected = nil
+			deselect = true
 		end
+
+		if not hover_pedit and MOUSE_CLICK then 
+			deselect = true
+		end
+
+		if(deselect)selected = nil
 	end
 end
 
@@ -1507,19 +1560,22 @@ function new_sensor(_data)
 end
 
 function draw_sensor(_sensor)
+	local sel, hover = _sensor == selected, _sensor.hover
+
 	-- convert world to screen position
 	local _x, _y = _sensor.x, _sensor.y
 	if(_sensor == placable)_x, _y = mouseX_raw + CAMERA_X, mouseY_raw + CAMERA_Y
 	local sx,sy = world_to_screen(_x, _y)
 
-	local col = 6
+	local col = sel and 7 or hover and 6 or 13
+	if(current_mode!="place sensors")col = 5
 
 	if _sensor.type == "box sensor" then 
 		local data = _sensor.data
 
-		rect(sx - data[1], sy-data[2], sx + data[1], sy + data[2], col)
+		rect(sx - data[1]* ZOOM_SCALE, sy-data[2]* ZOOM_SCALE, sx + data[1] * ZOOM_SCALE, sy + data[2] * ZOOM_SCALE, col)
 	else 
-		circ(sx, sy, 6, col)
+		circ(sx, sy, 6 * ZOOM_SCALE, col)
 	end
 end
 
@@ -1700,6 +1756,13 @@ function export_data()
 	if(#PARTS>0)out = sub(out,1,-2)
 	out..="]]"
 
+	out..="\nsensor_library=[["
+	for _sensor in all(SENSORS) do 
+		out..=sensor_to_string(_sensor) .. "\n"
+	end
+	if(#SENSORS>0)out = sub(out,1,-2)
+	out..="]]"
+
 									-- spline library
 	out..="\nspline_library=[["
 	for _spline in all(SPLINES) do 
@@ -1723,6 +1786,15 @@ function part_to_string(_part)
 	local out = table_to_string({_part.type, _part.name, _part.x, _part.y})
 
 	out..=","..table_to_string(_part.data)
+
+	return out
+end
+
+-- contains all the little info to convert a sensor into a string
+function sensor_to_string(_s)
+	local out = table_to_string({_s.type, _s.name, _s.x, _s.y})
+
+	out..=","..table_to_string(_s.data)
 
 	return out
 end
