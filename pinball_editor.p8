@@ -17,7 +17,7 @@ drag_update_x, drag_update_y=0,0
 show_points = true
 
 current_mode_index = 1
-modes_names=split"polygon edit,place parts"
+modes_names=split"polygon edit,place parts,spline edit"
 num_ui_modes = #modes_names
 modes_ui_x = 126 - num_ui_modes*9 		-- horizontal place to start drawing modes ui buttons
 
@@ -41,6 +41,7 @@ function _init()
 	ACTIVE_POLY_INDEX, ACTIVE_POLY_OBJECT = 1, POLYGONS[1]
 
 	PARTS = {}
+	foreach(split(part_library, "\n"), init_part)
 	
 
 	CAMERA_X,CAMERA_Y=dget(0) or 0,dget(1) or 0
@@ -49,14 +50,6 @@ function _init()
 	NEW_POINT_PREVIEW = {}
 end
 
-function init_part(_datastr)
-	local data = split(_datastr)
-	local part_type = deli(data,1)
-
-	if part_type=="flipper" then 
-		new_flipper(data) -- todo fix this
-	end
-end
 
 
 function init_polygon(poly_data)
@@ -145,6 +138,10 @@ function update_keyboard()
 	keyboard_enter = false
 	if(p=="\r")keyboard_enter=true
 
+	keyboard_delete = false 
+	if(p=="\b")keyboard_delete=true 
+
+
 	
 	if is_typing then 
 
@@ -184,10 +181,19 @@ function end_typing()
 	end
 end	
 
-part_num=0
-function gen_name()
+function gen_name(_num)
+	part_num = _num or 0
+
 	part_num+=1
-	return "part" .. sub("0"..part_num, -2)
+	local name = "part" .. sub("0"..part_num, -2)
+
+	for part in all(PARTS) do
+		if part.name==name then 
+			return gen_name(part_num)
+		end
+	end
+
+	return name
 end
 
 function update_camera()
@@ -248,6 +254,7 @@ function update_cursor_ui()
 
 	if(current_mode=="polygon edit")update_ui_polygon()
 	if(current_mode=="place parts")update_ui_parts()
+	if(current_mode=="spline edit")update_ui_splines()
 
 	if mouseY_raw < 8 then 
 		if mouseX_raw > modes_ui_x-2 then 
@@ -260,12 +267,16 @@ function update_cursor_ui()
 
 					-- change mode
 					if MOUSE_CLICK then 
+						can_drag = true
+
 						local mode_index = i+1
 						current_mode_index = mode_index
 						current_mode = modes_names[current_mode_index]
 
 						if mode_index==2 then 
 							goto_parts()
+						elseif mode_index == 3 then 
+							goto_splines()
 						end
 					end
 				end
@@ -335,6 +346,7 @@ function _draw()
 
 	if(current_mode=="polygon edit")draw_mode_polygon()
 	if(current_mode=="place parts")draw_mode_parts()
+	if(current_mode=="spline edit")draw_mode_spline()
 
 	do	-- top ui
 		rectfill(CAMERA_X, CAMERA_Y, CAMERA_X+128, CAMERA_Y+7, 8)
@@ -477,6 +489,8 @@ function draw_mode_polygon()
 	if NEW_POINT_PREVIEW!=nil then 
 		circ(NEW_POINT_PREVIEW.x, NEW_POINT_PREVIEW.y, 2, 7)
 	end
+
+	foreach(PARTS, draw_part)
 end
 
 function draw_ui_polygon()
@@ -496,7 +510,7 @@ end
 function goto_parts()
 	show_selector = false
 
-	part_option_texts=split"flipper,bumper,pop bumper,ramp"
+	part_option_texts=split"flipper,pop bumper,ramp"
 
 	placable,selected = nil,nil
 end
@@ -570,6 +584,13 @@ function update_ui_parts()
 		-- del(PARTS, hover_part)
 	end
 	
+	
+	if selected and keyboard_delete and not is_typing then 
+		del(PARTS, selected)
+		selected = nil
+
+		can_drag = true
+	end
 end
 
 function draw_mode_parts()
@@ -591,10 +612,12 @@ function draw_part(_p)
 	local rad = 3
 	local col = sel and 7 or _p.hover and 6 or 13
 
-	circfill(_p.x, _p.y, rad, 0)
-	circ(_p.x, _p.y, rad, col)
+	if(current_mode!="place parts")col = 5
 
 	if _p.type == "flipper" then 
+		circfill(_p.x, _p.y, rad, 0)
+		circ(_p.x, _p.y, rad, col)
+		
 		local is_left,length,rest_direction,active_angle=unpack(_p.data)
 		
 		local x2,y2 = _p.x + sin(rest_direction + active_angle) * length, _p.y + cos(rest_direction + active_angle) * length
@@ -602,6 +625,10 @@ function draw_part(_p)
 
 		local x2,y2 = _p.x + sin(rest_direction) * length, _p.y + cos(rest_direction) * length
 		line(_p.x, _p.y, x2, y2, col)
+	elseif _p.type == "pop bumper" then 
+		local rad = unpack(_p.data)
+
+		circ(_p.x, _p.y, rad, col)
 	end
 end
 
@@ -631,7 +658,7 @@ function draw_ui_parts()
 				
 				-- clicked on button to make new object
 				if MOUSE_CLICK then 
-					new_part(_text)
+					new_part(_text, true)
 				end
 			end
 
@@ -674,24 +701,71 @@ function new_selected(_part)
 	end
 end
 
-function new_part(_type)
+function init_part(_datastr)
+	local data = split(_datastr)
+
+	if #data > 1 then	
+		new_part(data, false)
+	end
+end
+
+
+
+function new_part(_data, _placable)
 	show_selector = false
-	place_object = true
+	place_object = _placable
 
-	part = {
-		x = MOUSE_X,
-		y = MOUSE_Y,
+	if (type(_data))=="string" then
+		-- new placable object type thing
 
-		type = _type,
-		name = gen_name(),
+		local _type = _data
 
-		index = -1,
-		data = {},
-	}
+		part = {
+			x = MOUSE_X,
+			y = MOUSE_Y,
 
-	if _type == "flipper" then 
-		part.index = 1
-		part.data = {true, 20, .8, -.12}
+			type = _type,
+			name = gen_name(),
+
+			index = -1,
+			data = {},
+		}
+
+		if _type == "flipper" then 
+			part.index = 1
+			part.data = {true, 20, .8, -.12}
+		elseif _type == "pop bumper" then 
+			part.index = 2
+			part.data = {8}
+		else 
+			debug(_type)
+		end
+
+		placable = part
+	else
+		-- todo holy shit is so cringe
+		local _type, _name, _x, _y, _info = deli(_data,1), deli(_data,1), deli(_data,1), deli(_data,1), _data
+		
+		part = {
+			x = _x,
+			y = _y,
+
+			type = _type,
+			name = _name,
+
+			index = -1,
+			data = _info,
+		}
+
+		if(_type == "flipper") part.index = 1
+		if(_type == "pop bumper") part.index = 2
+
+		-- todo bad solution no 
+		for i=1, #part.data do 
+			if(part.data[i]=="true" or part.data[i]=="false")part.data[i]= part.data[i]=="true"
+		end
+
+		add(PARTS, part)
 	end
 end
 
@@ -699,21 +773,21 @@ end
 part_settings = {
 	split"????",
 	split"side,lgth,rest,actv", 		-- flipper
-	split"pwr",
+	split"radi",
 }
 
 -- secondary list to the above , used for tooltips
 setting_descriptors = {
 	split"????",
 	split"left side flipper?,flipper length,resting angle,active angle change", 		-- flipper
-	split"pwr", 						-- pop bumper
+	split"bumper radius", 						-- pop bumper
 }
 
 -- secondary list to the above , used for tooltips
 setting_iterators = {
 	split"????",
 	split"bool,1,-.01,.02", 		-- flipper
-	split"pwr", 						-- pop bumper
+	split"1", 						-- pop bumper
 }
 function draw_part_editor(_part)
 	local colours = split"0,1,7,0,0"
@@ -793,6 +867,128 @@ function tright(_text)
 	return #_text*-4+2
 end
 
+---------------------------------------------------- SPLINES
+
+function goto_splines()
+	SPLINES = {}
+	add(SPLINES,new_spline(64,64,10,10,80,80,10,10))
+end
+
+function new_spline(x1,y1,ox1,oy1,x2,y2,ox2,oy2)
+	local spline = {}
+	
+	spline.x1, spline.y1 = x1,y1
+	spline.x2, spline.y2 = x2,y2
+
+	spline.ox1, spline.oy1 = ox1,oy1
+	spline.ox2, spline.oy2 = ox2,oy2
+
+	spline.hover = -1		-- -1 for none , index for active
+	spline.drag = -1
+
+	return spline
+end
+
+function update_ui_splines()
+	foreach(SPLINES,update_spline)
+end
+
+function draw_mode_spline()
+	foreach(SPLINES,draw_spline)
+end
+
+function update_spline(s)
+	local rad = 5
+
+	s.hover = -1
+	if(calc_dist2(s.x1, s.y1, MOUSE_X, MOUSE_Y)<rad)s.hover = 1 
+	if(calc_dist2(s.x2, s.y2, MOUSE_X, MOUSE_Y)<rad)s.hover = 4
+
+	if(calc_dist2(s.x1 + s.ox1, s.y1 + s.oy1, MOUSE_X, MOUSE_Y)<rad)s.hover = 2
+	if(calc_dist2(s.x2 + s.ox2, s.y2 + s.oy2, MOUSE_X, MOUSE_Y)<rad)s.hover = 3 
+
+	if MOUSE_CLICK and s.hover>0 or s.drag>0 then 
+		if(s.drag<0)s.drag = s.hover
+
+		local newX, newY = flr(MOUSE_X), flr(MOUSE_Y)
+
+		if(s.drag==1)s.x1,s.y1 = newX,newY
+		if(s.drag==4)s.x2,s.y2 = newX,newY
+
+		if(s.drag==2)s.ox1,s.oy1 = newX - s.x1,newY - s.y1
+		if(s.drag==3)s.ox2,s.oy2 = newX - s.x2,newY - s.y2
+	end
+
+	if not MOUSE_HOLD then 
+		s.drag = -1
+	end
+end
+
+function draw_spline(s)
+	local c1,c2 = 13, 5
+	local rad = 3
+
+	local hover_col = MOUSE_HOLD and 7 or 6
+
+	-- module things
+	line(s.x1, s.y1, s.x1 + s.ox1, s.y1 + s.oy1, 5)
+	line(s.x2, s.y2, s.x2 + s.ox2, s.y2 + s.oy2, 5)
+
+	msg = ""
+
+	local steps = 30
+	
+	local x1,x2,x3,x4 = s.x1, s.x1 + s.ox1, s.x2 + s.ox2, s.x2
+	local y1,y2,y3,y4 = s.y1, s.y1 + s.oy1, s.y2 + s.oy2, s.y2
+
+	local x1,y1=s.x1,s.y1
+	for i=0, steps do 
+		local t = i*(1/steps)
+
+		local x2,y2 = bezier(x1,x2,x3,x4, t),bezier(y1,y2,y3,y4, t)
+		line(x1,y1,x2,y2, 2)
+
+		x1,y1 = x2,y2
+	end
+	--[[
+	for i=0,1-(1/steps), 1/steps do	
+
+		local t = i
+		local x1 = bezier(x1,x2,x3,x4, t)
+		local y1 = bezier(y1,y2,y3,y4, t)
+
+		msg ..= x1 .."|"
+
+		local t = i + 1/steps
+		local x2 = bezier(x1,x2,x3,x4, t)
+		local y2 = bezier(y1,y2,y3,y4, t)
+		
+		line(x1,y1, x2, y2, 2)
+
+		msg ..= x2 .. " "
+	end
+	]]--
+
+	debug(msg)
+
+	local x1,x2,x3,x4 = s.x1, s.x1 + s.ox1, s.x2 + s.ox2, s.x2
+	local y1,y2,y3,y4 = s.y1, s.y1 + s.oy1, s.y2 + s.oy2, s.y2
+
+	local t = (time()*.25)%1
+	circ(bezier(x1,x2,x3,x4,t),bezier(y1,y2,y3,y4,t),2,7)
+
+	-- tolbar circles
+	circ(s.x1 + s.ox1, s.y1 + s.oy1, rad, s.hover==2 and hover_col or c2)
+	circ(s.x2 + s.ox2, s.y2 + s.oy2, rad, s.hover==3 and hover_col or c2)
+
+	-- origins
+	circ(s.x1,s.y1, rad+1, s.hover==1 and hover_col or c1)
+	circ(s.x2,s.y2, rad+1, s.hover==4 and hover_col or c1)
+end
+
+function bezier(p0,p1,p2,p3, t)
+	return (1-t)*((1-t)*((1-t)*p0+t*p1)+t*((1-t)*p1+t*p2)) + t*((1-t)*((1-t)*p1+t*p2)+t*((1-t)*p2+t*p3))
+end
 
 ---------------------------------------------------- ELSE
 function draw_checkerboard(_col)
@@ -899,7 +1095,6 @@ end
 -->8
 -- data handing
 function export_data()
-
 	dset(0,CAMERA_X)
 	dset(1,CAMERA_Y)
 
@@ -924,9 +1119,7 @@ end
 function part_to_string(_part)
 	local out = table_to_string({_part.type, _part.name, _part.x, _part.y})
 
-	if _part.type == "flipper" then 
-		out..=","..table_to_string(_part.data)
-	end
+	out..=","..table_to_string(_part.data)
 
 	return out
 end
@@ -962,11 +1155,11 @@ end
 __gfx__
 00000000010000000000000000000000000000000000000011111000000000000000000088888888888888888888888800000000000000000000000000000000
 000000001710000000eeeeee00000000000070000777000017771000000000000000000088228888822222288888822800000000000000000000000000000000
-00700700177100000eeeeeee00000000000077000777000011711000000000000000000082822888828888288882282800000000000000000000000000000000
-0007700017771000eeeeeeee0000e000000077700777000001710000000000000000000082222828828888288228882800000000000000000000000000000000
-0007700017777100eeeeeeee000eee00000077000000000001710000000000000000000088228228822222288228882800000000000000000000000000000000
-0070070017711000eeeeeeee0000e000000070000000000011711000000000000000000088882288822882288882282800000000000000000000000000000000
-0000000001101000eeeeeeee00000000000000000000000017771000000000000000000088822888822882288888822800000000000000000000000000000000
+00700700177100000eeeeeee00000000000077000777000011711000000000000000000082822888828888288888822800000000000000000000000000000000
+0007700017771000eeeeeeee0000e000000077700777000001710000000000000000000082222828828888288888888800000000000000000000000000000000
+0007700017777100eeeeeeee000eee00000077000000000001710000000000000000000088228228822222288888828800000000000000000000000000000000
+0070070017711000eeeeeeee0000e000000070000000000011711000000000000000000088882288822882288228288800000000000000000000000000000000
+0000000001101000eeeeeeee00000000000000000000000017771000000000000000000088822888822882288228888800000000000000000000000000000000
 0000000000000000eeeeeeee00000000000000000000000011111000000000000000000088888888888888888888888800000000000000000000000000000000
 00010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00171000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
