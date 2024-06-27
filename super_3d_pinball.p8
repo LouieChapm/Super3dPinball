@@ -3,6 +3,8 @@ version 41
 __lua__
 -- init
 
+-- TODO ADD MORE COMMENTS
+
 GRAVITY =  .06
 DEBUG = ""
 DEBUGTIME = 90
@@ -13,7 +15,7 @@ LEFT_FLIPPER,RIGHT_FLIPPER = false, false
 FLIPPER_SPEED = .4
 
 PHYSICS_SPEED = 1
-PHYSICS_STEPS = 8
+PHYSICS_STEPS = 4
 LINE_COL, CIRC_COL = {},{}		-- tables that are updated per frame physics step for non-static part collisions
 
 STOP_SIM = false
@@ -21,7 +23,7 @@ BALL_RADIUS = 5
 
 BALL_MAX_VELOCITY = 7
 
-#include inf_mapdata.txt
+#include inf_mapdata.txt  
 
 function debug(_text, _time)
 	DEBUG = tostr(_text)
@@ -36,9 +38,7 @@ function _init()
 
 
 	BALLS={}
-	for i=1,3 do
-		new_ball(64,120 - i*20)
-	end
+	new_ball(40,50)
 	
 	WALLS={}
 	foreach(split(poly_library,"\n"),init_walls)
@@ -49,6 +49,10 @@ function _init()
 	POINTS = {}
 
 	CAMERA_X, CAMERA_Y = 64,64
+end
+
+function init_spline(_spline)
+
 end
 
 function init_part(_datastr)
@@ -231,15 +235,13 @@ function draw_ball(_ball)
 	dirX,dirY=get_direction_of_vector(_ball.dirX, _ball.dirY)
 	line(_ball.x, _ball.y, _ball.x + _ball.dirX *2, _ball.y + _ball.dirY *2, 7)
 	pset(_ball.x, _ball.y, t)
-
-	circ(_ball.x,_ball.y,_ball.physics_detect_radius,7)
 end
 
-function draw_part(_part)
-	_part.drw(_part, _part.x1, _part.y1)
 end
 
-function draw_flipper(_part, _x, _y)
+function draw_flipper(_flipper)
+	local ox, oy = _flipper.x, _flipper.y
+
 	-- circfill(ox, oy, 3, 3)
 
 	line(_x, _y, _part.x2, _part.y2, 3)
@@ -267,8 +269,8 @@ end
 -->8
 -- physics
 
-function dot_product(x1, y1, x2,y2)
-	return ( x1 * x2 ) + ( y1 * y2 )
+function dot_product(v1, v2)
+	return ( v1.x * v2.x ) + ( v1.y * v2.y )
 end
 
 function convert_points_to_vector(x1,y1,x2,y2)
@@ -320,38 +322,24 @@ function update_flipper(_flipper)
 		_flipper.direction = direction
 		_flipper.x2, _flipper.y2= _flipper.x1 + sin(direction) * _flipper.length, _flipper.y1 + cos(direction) * _flipper.length
 	end
-
-	add(LINE_COL,{_flipper.x1, _flipper.y1, _flipper.x2, _flipper.y2, _flipper})
 end
 
+function update_ball(_ball)
+	_ball.x += _ball.dirX * deltaTime
+	_ball.y += _ball.dirY * deltaTime
 
-function upd_add_circ(_part)
-	add(CIRC_COL,{_part.x1, _part.y1, _part.rad, _part})
-end
+	-- check collision with each line of edge
+	-- foreach(LINES, line_col)
+	for wall in all(WALLS) do 
+		wall_col(wall, _ball)
+	end
 
-function col_bumper(part, point, ball)
-	local dirX, dirY, length = get_direction_of_vector(convert_points_to_vector(part.x1, part.y1, ball.x, ball.y))
+	for flipper in all(FLIPPERS) do 
 
-	local newX, newY = part.x1 + dirX * (BALL_RADIUS + part.rad), part.y1 + dirY * (BALL_RADIUS + part.rad)
-	ball.x, ball.y = newX, newY
-
-	if(#POINTS>5)deli(POINTS,5)
-	add(POINTS, new_point(newX, newY))
-
-	local force = 6 + rnd"2"
-
-	debug(tostr(dirX * force) .. ", " .. tostr(dirY * force))
-
-	add_force(ball, dirX * force, dirY * force, false)
-end
-
-
-function col_flipper(flipper, point, ball)
-
-	local dirX, dirY, length = get_direction_of_vector(convert_points_to_vector(point[1],point[2],ball.x, ball.y))
-	
-	-- snap ball to nearest edge on flipper
-	ball.x, ball.y = point[1] + dirX * BALL_RADIUS, point[2] + dirY * BALL_RADIUS
+		local col,point=edge_collision(flipper, flipper.tip, _ball)
+		if col then 
+			local dirX, dirY, length = get_direction_of_vector(convert_points_to_vector(new_point(point[1],point[2]),_ball))
+			_ball.x, _ball.y = point[1] + dirX * BALL_RADIUS, point[2] + dirY * BALL_RADIUS
 
 	local bounciness = .8
 	if flipper.active_perc%1!=0 and flipper.is_active then 
@@ -391,57 +379,59 @@ function col_flipper(flipper, point, ball)
 		debug(5 * (1-_ball.additive_velocity))
 		]]--
 
-		add_force(ball, velocityX * bounciness, velocityY * bounciness * 1.2, false)
-	else
-		wall_col(flipper, point, ball)
-	end
-end
+				add_force(_ball, velocityX * bounciness, velocityY * bounciness * 1.2, false)
+			else
+				local wall_direction=new_point(dirX, dirY)
 
-function update_ball(_ball)
-	_ball.x += _ball.dirX * deltaTime
-	_ball.y += _ball.dirY * deltaTime
+				local dot = dot_product(new_point(_ball.dirX, _ball.dirY),wall_direction)
 
-	-- check collision with each line of edge
-	-- foreach(LINES, line_col)
-	for wall in all(WALLS) do 
-		local hit,point = line_collision(wall.x1, wall.y1, wall.x2, wall.y2, _ball, {wall.dirX, wall.dirY, wall.length})
-		if hit then	
-			wall_col(wall, point, _ball)
+				local dx = -wall_direction.x * 2 * dot
+				local dy = -wall_direction.y * 2 * dot
+
+					-- normal flipper either stationary or heading down
+				add_force(_ball, dx * bounciness, dy * bounciness, false)
+			end
 		end
 	end
 
-	for line in all(LINE_COL) do 
-		local hit,point = line_collision(line[1], line[2], line[3], line[4], _ball)
+	--[[
+	-- iterate through BOX_COL list for collisions
+	for box in all(BOX_COL) do 
+		local hit,point = box_collision(box[1], box[2], box[3], box[4] _ball)
 		if hit then	
-			line[5]:col(point, _ball)
+			box[5]:col(point, _ball)
 		end
 	end
+	]]
 
-	for circ in all(CIRC_COL) do 
-		local hit,point = circ_collision(circ[1], circ[2], circ[3], _ball)
-		if hit then	
-			circ[4]:col(point, _ball)
-		end
-	end
-
+					-- apply gravity force
 	add_force(_ball, 0, GRAVITY * deltaTime, false)
 
+					-- clamp ball speed to maximum velocity
 	_ball.dirX = mid(-BALL_MAX_VELOCITY, _ball.dirX, BALL_MAX_VELOCITY)
 	_ball.dirY = mid(-BALL_MAX_VELOCITY, _ball.dirY, BALL_MAX_VELOCITY)
 
+					-- find normal direction / speed
 	local dist=calc_dist2(_ball.x, _ball.y, _ball.x + _ball.dirX, _ball.y + _ball.dirY)
 	_ball.n_dirX, _ball.n_dirY = _ball.dirX / dist, _ball.dirY / dist -- normalised direction ?
 
+					-- update additive velocity
 	_ball.additive_velocity = abs(_ball.dirX) + abs(_ball.dirY)
 
+					-- todo remove this
+					-- move ball to flipper when it drains
 	if(_ball.y>180)_ball.x, _ball.y, _ball.dirX, _ball.dirY = 92,112, 0, 0
 end
 
+-- TODO completely refactor this
+-- ran for each edge and applies physics stuff to it
+function wall_col(_wall, _ball)
+	local col,point = edge_collision(_wall.a, _wall.b, _ball)
+	if col then		
+		local dirX, dirY, length = get_direction_of_vector(convert_points_to_vector(new_point(point[1],point[2]),_ball))
+		_ball.x, _ball.y = point[1] + dirX * BALL_RADIUS, point[2] + dirY * BALL_RADIUS
 
-function wall_col(wall, point, ball)
-	local dirX, dirY, length = get_direction_of_vector(convert_points_to_vector(point[1],point[2], ball.x, ball.y))
-
-	ball.x, ball.y = point[1] + dirX * BALL_RADIUS, point[2] + dirY * BALL_RADIUS
+		local wall_direction=new_point(dirX, dirY)
 
 	local bounciness = .6
 
@@ -450,20 +440,31 @@ function wall_col(wall, point, ball)
 	local dx = -dirX * dot
 	local dy = -dirY * dot
 
-	-- an extra check to see if the ball is "skimming" the wall , in which case don't bounce it too much- I guess
-	local skim_check = dot_product(ball.n_dirX, ball.n_dirY, dirX, dirY)
-	if abs(skim_check)<.3 then 
-		debug(tostr(t) .. "\n" .. skim_check)
-		dx = dirX
-		dy = dirY
+		--[[
+		-- an extra check to see if the ball is "skimming" the wall , in which case don't bounce it too much- I guess
+		local skim_check = dot_product({x=_ball.n_dirX, y=_ball.n_dirY},wall_direction)
+		if abs(skim_check)<.3 then 
+			debug(tostr(t) .. "\n" .. skim_check)
+			dx = dirX
+			dy = dirY
 
-		bounciness = .3
+			bounciness = .3
+		end
+		]]--
+
+		--[[
+		local dx = dirX
+		local dy = dirY
+		]]--
+
+
+		add_force(_ball, dx, dy, false)
 	end
-
-
-	add_force(ball, dx, dy, false)
 end
 
+function normalise(_vx, _vy)
+
+end
 
 -- returns true if collision between ball and two coordinates
 function line_collision(x1, y1, x2, y2, ball, precalc)
